@@ -53,6 +53,12 @@ spec:
             - name: grafana-datasources
               mountPath: /etc/grafana/provisioning/datasources
               readOnly: true
+            - name: grafana-dashboard-provisioning
+              mountPath: /etc/grafana/provisioning/dashboards
+              readOnly: true
+            - name: grafana-dashboards
+              mountPath: /var/lib/grafana/dashboards
+              readOnly: true
           resources:
             requests:
               cpu: 100m
@@ -67,3 +73,9 @@ spec:
         - name: grafana-datasources
           configMap:
             name: grafana-datasources
+        - name: grafana-dashboard-provisioning
+          configMap:
+            name: grafana-dashboard-provisioning
+        - name: grafana-dashboards
+          configMap:
+            name: grafana-dashboards

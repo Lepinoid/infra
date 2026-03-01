@@ -16,6 +16,8 @@ resources:
   - cloudflared/deployment.yaml
   - grafana/admin-credentials.sops.yaml
   - grafana/datasource.yaml
+  - grafana/dashboard-provisioning.yaml
+  - grafana/dashboard-lepinoid-pods.yaml
   - grafana/pvc.yaml
   - grafana/deployment.yaml
   - grafana/service.yaml
