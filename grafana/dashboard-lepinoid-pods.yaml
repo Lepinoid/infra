@@ -436,7 +436,7 @@ data:
           },
           "targets": [
             {
-              "expr": "{app=\"couchdb\", namespace=\"lepinoid\"}",
+              "expr": "{service_name=\"couchdb\", namespace=\"lepinoid\"}",
               "refId": "A"
             }
           ],
@@ -459,7 +459,7 @@ data:
           },
           "targets": [
             {
-              "expr": "{app=\"livesync-bridge\", namespace=\"lepinoid\"}",
+              "expr": "{service_name=\"livesync-bridge\", namespace=\"lepinoid\"}",
               "refId": "A"
             }
           ],
@@ -482,7 +482,7 @@ data:
           },
           "targets": [
             {
-              "expr": "{app=\"cloudflared\", namespace=\"lepinoid\"}",
+              "expr": "{service_name=\"cloudflared\", namespace=\"lepinoid\"}",
               "refId": "A"
             }
           ],
@@ -505,7 +505,7 @@ data:
           },
           "targets": [
             {
-              "expr": "{app=\"grafana\", namespace=\"lepinoid\"}",
+              "expr": "{service_name=\"grafana\", namespace=\"lepinoid\"}",
               "refId": "A"
             }
           ],
