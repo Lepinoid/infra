@@ -190,15 +190,26 @@ spec:
     - {}
 ```
 
-**deployment.yaml** のリソース設定例:
+**deployment.yaml** — `--protocol http2` を必ず指定すること。デフォルトのQUICプロトコルはNetworkPolicyによりブロックされる可能性がある:
 
 ```yaml
-resources:
-  requests:
-    cpu: 50m
-    memory: 64Mi
-  limits:
-    memory: 128Mi
+containers:
+  - name: cloudflared
+    image: cloudflare/cloudflared:2025.10.0
+    args:
+      - tunnel
+      - --no-autoupdate
+      - --metrics
+      - 0.0.0.0:2000
+      - --protocol
+      - http2
+      - run
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
 ```
 
 ### Grafana（スタンドアロン）
@@ -253,6 +264,9 @@ spec:
       labels:
         app: grafana
     spec:
+      securityContext:
+        runAsUser: 472
+        fsGroup: 472
       containers:
         - name: grafana
           image: grafana/grafana:11.5.2
