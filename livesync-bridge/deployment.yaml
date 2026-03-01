@@ -67,6 +67,8 @@ spec:
             name: livesync-bridge-scripts
             defaultMode: 0755
         - name: bridge-vault
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: bridge-vault
         - name: bridge-data
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: bridge-data

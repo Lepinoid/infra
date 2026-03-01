@@ -11,6 +11,7 @@ resources:
   - livesync-bridge/config.sops.yaml
   - livesync-bridge/scripts.yaml
   - livesync-bridge/network-policy.yaml
+  - livesync-bridge/pvc.yaml
   - livesync-bridge/deployment.yaml
   - cloudflared/tunnel-token.sops.yaml
   - cloudflared/network-policy.yaml
