@@ -35,7 +35,7 @@ spec:
             - name: GIT_USER_EMAIL
               value: livesync-bridge@localhost
             - name: VAULT_DIR
-              value: /app/vault/private
+              value: /app/vault/lepinoid
           volumeMounts:
             - name: livesync-bridge-config
               mountPath: /app/dat/config.json
