@@ -13,17 +13,6 @@ Flux CD がこのリポジトリを監視し、`lepinoid` namespace にリソー
 | **Cloudflared** | Cloudflare Tunnel による外部アクセス（token ベース） |
 | **Grafana** | Prometheus 接続のモニタリングダッシュボード。Cloudflare Access 認証 |
 
-## Prerequisites
-
-- [Nix](https://nixos.org/) + [direnv](https://direnv.net/)
-- [rbw](https://github.com/doy/rbw) (Bitwarden CLI) — SOPS 秘密鍵の取得に使用
-
-```bash
-# ディレクトリに入ると direnv が自動で Nix dev shell を有効化
-cd lepinoid-infra/
-# → kubectl, sops, age が利用可能
-```
-
 ## Secret Management
 
 Secret は [SOPS](https://github.com/getsops/sops) + [Age](https://github.com/FiloSottile/age) で暗号化管理する。
