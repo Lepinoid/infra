@@ -30,7 +30,7 @@ SOPS の Age 秘密鍵は `SOPS_AGE_KEY_CMD` 経由で Bitwarden CLI (`rbw get l
 ## Manifest Rules
 
 - **`metadata.namespace` は設定しない** — Flux の `targetNamespace: lepinoid` で自動注入される
-- **全コンテナに `resources.requests` / `resources.limits` を設定する** — ResourceQuota により未設定 Pod は拒否される
+- **全コンテナに `resources.requests` / `resources.limits` を設定する（`cpu` と `memory` の両方必須）** — ResourceQuota により `requests.cpu`, `requests.memory`, `limits.cpu`, `limits.memory` のいずれかが欠けた Pod は作成が拒否される
 - **`nodeSelector` は設定しない**
 - **クラスタスコープリソース（ClusterRole, CRD, PV 等）は作成不可**
 - Secret ファイルは `*.sops.yaml` の命名規則に従う（`.sops.yaml` の `path_regex` に一致させる）
