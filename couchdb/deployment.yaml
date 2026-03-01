@@ -1,0 +1,117 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: couchdb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: couchdb
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: couchdb
+    spec:
+      initContainers:
+        - name: copy-couchdb-config
+          image: couchdb:3
+          command:
+            - sh
+            - -c
+            - cp /tmp/couchdb-config/local.ini /opt/couchdb/etc/local.d/local.ini
+          volumeMounts:
+            - name: couchdb-config
+              mountPath: /tmp/couchdb-config
+              readOnly: true
+            - name: couchdb-config-writable
+              mountPath: /opt/couchdb/etc/local.d
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+      containers:
+        - name: setup-users
+          image: couchdb:3
+          command: ["/bin/sh", "/scripts/setup.sh"]
+          env:
+            - name: COUCHDB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: couchdb-credentials
+                  key: COUCHDB_USER
+            - name: COUCHDB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: couchdb-credentials
+                  key: COUCHDB_PASSWORD
+          volumeMounts:
+            - name: couchdb-setup
+              mountPath: /scripts
+              readOnly: true
+            - name: couchdb-users
+              mountPath: /etc/couchdb-users
+              readOnly: true
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+        - name: couchdb
+          image: couchdb:3
+          env:
+            - name: COUCHDB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: couchdb-credentials
+                  key: COUCHDB_USER
+            - name: COUCHDB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: couchdb-credentials
+                  key: COUCHDB_PASSWORD
+          ports:
+            - name: couchdb
+              containerPort: 5984
+              protocol: TCP
+          volumeMounts:
+            - name: couchdb-data
+              mountPath: /opt/couchdb/data
+            - name: couchdb-config-writable
+              mountPath: /opt/couchdb/etc/local.d
+          livenessProbe:
+            tcpSocket:
+              port: couchdb
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            tcpSocket:
+              port: couchdb
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: couchdb-data
+          persistentVolumeClaim:
+            claimName: couchdb-data
+        - name: couchdb-config
+          configMap:
+            name: couchdb-config
+        - name: couchdb-config-writable
+          emptyDir: {}
+        - name: couchdb-setup
+          configMap:
+            name: couchdb-setup
+            defaultMode: 0755
+        - name: couchdb-users
+          secret:
+            secretName: couchdb-users

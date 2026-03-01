@@ -1,0 +1,126 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: livesync-bridge-scripts
+data:
+  commit.sh: |
+    #!/bin/sh
+    set -eu
+
+    FILENAME="$1"
+    MODE="${2:-}"
+
+    # commit.md以外は無視
+    case "$(basename "$FILENAME")" in
+        commit.md) ;;
+        *) exit 0 ;;
+    esac
+
+    VAULT_DIR="${VAULT_DIR:?VAULT_DIR is not set}"
+    COMMIT_FILE="${VAULT_DIR}/commit.md"
+    BRANCH="${GIT_BRANCH:-main}"
+
+    # .gitをVAULT_DIRの親ディレクトリに配置し、bridgeの監視範囲外にする
+    GIT_ROOT="$(dirname "$VAULT_DIR")"
+    export GIT_DIR="${GIT_ROOT}/.git"
+    export GIT_WORK_TREE="$VAULT_DIR"
+
+    # commit=true も pull=true も無ければ終了
+    DO_COMMIT=false
+    DO_PULL=false
+    if grep -q '^commit=true' "$COMMIT_FILE" 2>/dev/null; then
+        DO_COMMIT=true
+    fi
+    if grep -q '^pull=true' "$COMMIT_FILE" 2>/dev/null; then
+        DO_PULL=true
+    fi
+    if [ "$DO_COMMIT" = false ] && [ "$DO_PULL" = false ]; then
+        exit 0
+    fi
+
+    cd "$VAULT_DIR"
+
+    # Gitリポジトリの初期化（初回のみ）
+    if [ ! -d "$GIT_DIR" ]; then
+        echo "[commit.sh] Initializing git repository..."
+        git init -b "$BRANCH"
+    fi
+
+    # Git設定
+    git config user.name "${GIT_USER_NAME:-livesync-bridge}"
+    git config user.email "${GIT_USER_EMAIL:-livesync-bridge@localhost}"
+
+    # リモート設定
+    REMOTE_URL="${GIT_REPO_URL:-}"
+    if [ -z "$REMOTE_URL" ]; then
+        if ! git remote get-url origin >/dev/null 2>&1; then
+            echo "[commit.sh] Error: GIT_REPO_URL is not set and no remote configured"
+            exit 1
+        fi
+    else
+        # GITHUB_TOKENがあればURLにトークンを埋め込む
+        if [ -n "${GITHUB_TOKEN:-}" ]; then
+            AUTH_URL="$(echo "$REMOTE_URL" | sed "s|https://|https://x-access-token:${GITHUB_TOKEN}@|")"
+        else
+            AUTH_URL="$REMOTE_URL"
+        fi
+
+        if git remote get-url origin >/dev/null 2>&1; then
+            git remote set-url origin "$AUTH_URL"
+        else
+            git remote add origin "$AUTH_URL"
+        fi
+    fi
+
+    # --- pull処理 ---
+    if [ "$DO_PULL" = true ]; then
+        echo "[commit.sh] pull=true detected, pulling remote changes..."
+        sed -i 's/^pull=true/pull=false/' commit.md
+
+        if git rev-parse HEAD >/dev/null 2>&1; then
+            # コンフリクト時はリモート優先（pullはGitHub側の変更を取り込む目的）
+            git fetch origin "$BRANCH" 2>/dev/null && \
+                git merge --no-edit --strategy-option=theirs "origin/$BRANCH" || true
+        else
+            if git fetch origin "$BRANCH" 2>/dev/null; then
+                git merge --no-edit --allow-unrelated-histories --strategy-option=theirs "origin/$BRANCH" || true
+            fi
+        fi
+        echo "[commit.sh] Pull complete"
+    fi
+
+    # --- commit処理 ---
+    if [ "$DO_COMMIT" = true ]; then
+        echo "[commit.sh] commit=true detected, starting commit..."
+
+        # コミット前にリモートの変更を取り込む（コンフリクト時はローカル優先）
+        if git rev-parse HEAD >/dev/null 2>&1; then
+            echo "[commit.sh] Fetching remote before commit..."
+            git fetch origin "$BRANCH" 2>/dev/null && \
+                git merge --no-edit --strategy-option=ours "origin/$BRANCH" || true
+        else
+            if git fetch origin "$BRANCH" 2>/dev/null; then
+                git merge --no-edit --allow-unrelated-histories --strategy-option=ours "origin/$BRANCH" || true
+            fi
+        fi
+
+        # commit.mdをcommit=falseにリセット
+        sed -i 's/^commit=true/commit=false/' commit.md
+
+        # 全変更をステージング＆コミット
+        git add -A
+        COMMIT_MSG="vault update: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+        git commit -m "$COMMIT_MSG" || {
+            echo "[commit.sh] Nothing to commit"
+            exit 0
+        }
+
+        # プッシュ（失敗時はcommit.mdを復元して再試行可能にする）
+        if git push -u origin "$BRANCH"; then
+            echo "[commit.sh] Push successful: $COMMIT_MSG"
+        else
+            echo "[commit.sh] Push failed, reverting commit.md"
+            sed -i 's/^commit=false/commit=true/' commit.md
+            exit 1
+        fi
+    fi

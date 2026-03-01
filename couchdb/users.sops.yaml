@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: couchdb-users
+type: Opaque
+stringData:
+    #ENC[AES256_GCM,data:Ngn78/2M9tqX6G3ZW1OUpsfg6tYeggMi9Sun/SxwAOIz6mC0tPe/5awuV7/Vm4SSM8nTo9wGmOSY+A==,iv:R+WyA33XPLJ00IMsRTfB5WIZktPB0+01zTk9Lkg2CCw=,tag:1zLor6rW4oiFch64NRtr/A==,type:comment]
+    users.conf: ENC[AES256_GCM,data:pfQF2wbmBRwqlgLqcpCDcFQpmWD2rR2rpay6TIXNlk/XL0MWWESiBEMpCZ6hrthg,iv:ddGNClE7j28XnPP9hlmesJNxNS1sM7u/VHQU5sLz5Sc=,tag:NniyuwQtvWBAwWFYDcmWQg==,type:str]
+sops:
+    age:
+        - recipient: age10p7f8sn3v2r0973s8q4664sgxh4hpt8c0tp3w83w8m0zu5rkfccqge8atx
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAva1RFdWwxcnBXL2MvTCt6
+            WitMZzhDVjdYSW5jVHJlZ3Z5Y29YK2h1QTFvCmMxL01nOEFyK2JVMU1oTkVIY213
+            ZEdiWW1qUkxqYzkwTndPeG53ci9EdmcKLS0tIGh5bFRXTGFuZ1B6VXJnbmZMdmNr
+            bVNvWGFaTjFwQWVpU1NGTFVBaytlS1EK3hhQnFMnz1qevhDmVK5VVyjEyh3lTSlx
+            SUiDnebUYXOK2NIc93Q84jVA47Nfq9jfVPpf146QsuIgWxeUOnpUPA==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-03-01T05:41:59Z"
+    mac: ENC[AES256_GCM,data:TzYBLiTBdp5WD7PR40Q0knVtblb7pK0N25yNyYGgP1KcE5op60J1lcnn4F5zIvnqxdStl/anPHWLKy0J3JVV0/PE76LUEPZcjOhBtmiyw2JLJ+0Rh7wmtjn51JTowP0Jvg2OucENhi0bl572fPHsURdyMpy/1LshFaGs2uBK/CQ=,iv:X7buhs18iHe8nR3H7z0uLBEeZYSgvCLvx474FjnCQ18=,tag:jGDDPENU3YkQ1E40eMzAOA==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

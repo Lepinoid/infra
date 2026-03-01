@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - couchdb/credentials.sops.yaml
+  - couchdb/users.sops.yaml
+  - couchdb/configmap.yaml
+  - couchdb/setup.yaml
+  - couchdb/pvc.yaml
+  - couchdb/deployment.yaml
+  - couchdb/service.yaml
+  - livesync-bridge/config.sops.yaml
+  - livesync-bridge/scripts.yaml
+  - livesync-bridge/deployment.yaml
+  - cloudflared/tunnel-token.sops.yaml
+  - cloudflared/network-policy.yaml
+  - cloudflared/deployment.yaml
+  - grafana/admin-credentials.sops.yaml
+  - grafana/datasource.yaml
+  - grafana/pvc.yaml
+  - grafana/deployment.yaml
+  - grafana/service.yaml

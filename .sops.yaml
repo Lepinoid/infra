@@ -1,0 +1,4 @@
+creation_rules:
+  - path_regex: \.sops\.(yaml|yml)$
+    encrypted_regex: ^(data|stringData)$
+    age: "age10p7f8sn3v2r0973s8q4664sgxh4hpt8c0tp3w83w8m0zu5rkfccqge8atx"

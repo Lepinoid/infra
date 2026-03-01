@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: couchdb-setup
+data:
+  setup.sh: |
+    #!/bin/sh
+    set -eu
+
+    COUCHDB_URL="http://localhost:5984"
+    AUTH="${COUCHDB_USER}:${COUCHDB_PASSWORD}"
+
+    echo "[setup] Waiting for CouchDB..."
+    until curl -sf "${COUCHDB_URL}/_up" > /dev/null 2>&1; do
+      sleep 2
+    done
+    echo "[setup] CouchDB is ready"
+
+    # _users / _replicator データベースの初期化
+    curl -sf -X PUT "http://${AUTH}@localhost:5984/_users" > /dev/null 2>&1 || true
+    curl -sf -X PUT "http://${AUTH}@localhost:5984/_replicator" > /dev/null 2>&1 || true
+
+    # ユーザー作成
+    while IFS=: read -r username password database; do
+      # 空行・コメント行をスキップ
+      [ -z "$username" ] && continue
+      case "$username" in \#*) continue ;; esac
+
+      echo "[setup] Processing user: ${username}"
+
+      # ユーザーが既に存在するかチェック
+      if curl -sf "http://${AUTH}@localhost:5984/_users/org.couchdb.user:${username}" > /dev/null 2>&1; then
+        echo "[setup] User ${username} already exists, skipping"
+      else
+        curl -sf -X PUT \
+          "http://${AUTH}@localhost:5984/_users/org.couchdb.user:${username}" \
+          -H "Content-Type: application/json" \
+          -d "{\"name\":\"${username}\",\"password\":\"${password}\",\"roles\":[],\"type\":\"user\"}" \
+          > /dev/null 2>&1 && echo "[setup] User ${username} created" \
+          || echo "[setup] Failed to create user ${username}"
+      fi
+
+      # データベース作成
+      if [ -n "$database" ]; then
+        curl -sf -X PUT \
+          "http://${AUTH}@localhost:5984/${database}" \
+          > /dev/null 2>&1 && echo "[setup] Database ${database} created" \
+          || echo "[setup] Database ${database} already exists"
+
+        # データベースのセキュリティ設定（ユーザーをmemberに追加）
+        curl -sf -X PUT \
+          "http://${AUTH}@localhost:5984/${database}/_security" \
+          -H "Content-Type: application/json" \
+          -d "{\"members\":{\"names\":[\"${username}\"],\"roles\":[]},\"admins\":{\"names\":[],\"roles\":[]}}" \
+          > /dev/null 2>&1 && echo "[setup] Security set for ${database}" \
+          || echo "[setup] Failed to set security for ${database}"
+      fi
+    done < /etc/couchdb-users/users.conf
+
+    echo "[setup] User setup complete, sleeping..."
+    sleep infinity
