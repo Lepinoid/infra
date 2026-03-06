@@ -61,7 +61,7 @@ spec:
               cpu: 5m
               memory: 16Mi
             limits:
-              cpu: 10m
+              cpu: 100m
               memory: 32Mi
         - name: couchdb
           image: couchdb:3
