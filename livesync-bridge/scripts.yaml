@@ -78,8 +78,13 @@ data:
         sed -i 's/^pull=true/pull=false/' commit.md
 
         # コンフリクト時はリモート優先（pullはGitHub側の変更を取り込む目的）
-        git fetch origin "$BRANCH" 2>/dev/null && \
+        git fetch origin "$BRANCH" 2>/dev/null || true
+        if git rev-parse HEAD >/dev/null 2>&1; then
             git merge --no-edit --allow-unrelated-histories --strategy-option=theirs "origin/$BRANCH" || true
+        else
+            # 初回: ローカルにコミットがないのでmergeできない。リモートをそのままチェックアウト
+            git reset --hard "origin/$BRANCH" 2>/dev/null || true
+        fi
         echo "[commit.sh] Pull complete"
     fi
 
