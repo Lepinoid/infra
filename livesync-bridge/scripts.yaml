@@ -93,27 +93,21 @@ data:
     if [ "$DO_COMMIT" = true ]; then
         echo "[commit.sh] commit=true detected, starting commit..."
 
-        # コミット前にリモートの変更を取り込む（コンフリクト時はローカル優先）
-        if git rev-parse HEAD >/dev/null 2>&1; then
-            echo "[commit.sh] Fetching remote before commit..."
-            git fetch origin "$BRANCH" 2>/dev/null && \
-                git merge --no-edit --strategy-option=ours "origin/$BRANCH" || true
-        else
-            if git fetch origin "$BRANCH" 2>/dev/null; then
-                git merge --no-edit --allow-unrelated-histories --strategy-option=ours "origin/$BRANCH" || true
-            fi
-        fi
-
         # commit.mdをcommit=falseにリセット
         sed -i 's/^commit=true/commit=false/' commit.md
 
-        # 全変更をステージング＆コミット
+        # 先にローカルの変更をコミット（untrackedファイルによるmerge失敗を防ぐ）
         git add -A
         COMMIT_MSG="vault update: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
         git commit -m "$COMMIT_MSG" || {
             echo "[commit.sh] Nothing to commit"
             exit 0
         }
+
+        # コミット後にリモートの変更を取り込む（コンフリクト時はローカル優先）
+        echo "[commit.sh] Fetching remote before push..."
+        git fetch origin "$BRANCH" 2>/dev/null && \
+            git merge --no-edit --strategy-option=ours "origin/$BRANCH" || true
 
         # プッシュ（失敗時はcommit.mdを復元して再試行可能にする）
         if git push -u origin "$BRANCH"; then
