@@ -77,15 +77,9 @@ data:
         echo "[commit.sh] pull=true detected, pulling remote changes..."
         sed -i 's/^pull=true/pull=false/' commit.md
 
-        if git rev-parse HEAD >/dev/null 2>&1; then
-            # コンフリクト時はリモート優先（pullはGitHub側の変更を取り込む目的）
-            git fetch origin "$BRANCH" 2>/dev/null && \
-                git merge --no-edit --strategy-option=theirs "origin/$BRANCH" || true
-        else
-            if git fetch origin "$BRANCH" 2>/dev/null; then
-                git merge --no-edit --allow-unrelated-histories --strategy-option=theirs "origin/$BRANCH" || true
-            fi
-        fi
+        # コンフリクト時はリモート優先（pullはGitHub側の変更を取り込む目的）
+        git fetch origin "$BRANCH" 2>/dev/null && \
+            git merge --no-edit --allow-unrelated-histories --strategy-option=theirs "origin/$BRANCH" || true
         echo "[commit.sh] Pull complete"
     fi
 
@@ -107,7 +101,7 @@ data:
         # コミット後にリモートの変更を取り込む（コンフリクト時はローカル優先）
         echo "[commit.sh] Fetching remote before push..."
         git fetch origin "$BRANCH" 2>/dev/null && \
-            git merge --no-edit --strategy-option=ours "origin/$BRANCH" || true
+            git merge --no-edit --allow-unrelated-histories --strategy-option=ours "origin/$BRANCH" || true
 
         # プッシュ（失敗時はcommit.mdを復元して再試行可能にする）
         if git push -u origin "$BRANCH"; then
