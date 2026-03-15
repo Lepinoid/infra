@@ -9,10 +9,7 @@ resources:
   - couchdb/deployment.yaml
   - couchdb/service.yaml
   - livesync-bridge/config.sops.yaml
-  - livesync-bridge/scripts.yaml
-  - livesync-bridge/network-policy.yaml
-  - livesync-bridge/pvc.yaml
-  - livesync-bridge/deployment.yaml
+  - livesync-bridge/helmrelease.yaml
   - cloudflared/tunnel-token.sops.yaml
   - cloudflared/network-policy.yaml
   - cloudflared/deployment.yaml
