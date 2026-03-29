@@ -1,4 +1,4 @@
 # OpenTofu / Terraform
 terraform/.terraform/
-terraform/.terraform.lock.hcl
 terraform/*.tfplan
+terraform/terraform.tfstate.backup

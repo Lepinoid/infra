@@ -11,6 +11,10 @@ permissions:
   issues: write
   statuses: write
 
+concurrency:
+  group: terraform-apply
+  cancel-in-progress: false
+
 jobs:
   apply-from-comment:
     if: >-
@@ -89,7 +93,7 @@ jobs:
           exit $EXIT_CODE
 
       - name: Commit encrypted state
-        if: success()
+        if: always()
         working-directory: terraform
         run: |
           git config user.name "github-actions[bot]"
@@ -99,8 +103,8 @@ jobs:
             echo "No state changes to commit"
           else
             git commit -m "Update encrypted terraform state"
-            git pull --rebase
-            git push
+            git pull --rebase origin ${{ steps.pr.outputs.ref }}
+            git push origin HEAD:${{ steps.pr.outputs.ref }}
           fi
 
       - name: Comment apply result on PR
@@ -167,6 +171,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
 
       - name: Setup OpenTofu
         uses: opentofu/setup-opentofu@v1
@@ -180,7 +186,7 @@ jobs:
         run: tofu apply -auto-approve -no-color
 
       - name: Commit encrypted state
-        if: success()
+        if: always()
         working-directory: terraform
         run: |
           git config user.name "github-actions[bot]"
@@ -190,6 +196,6 @@ jobs:
             echo "No state changes to commit"
           else
             git commit -m "Update encrypted terraform state"
-            git pull --rebase
-            git push
+            git pull --rebase origin ${{ github.ref_name }}
+            git push origin HEAD:${{ github.ref_name }}
           fi
