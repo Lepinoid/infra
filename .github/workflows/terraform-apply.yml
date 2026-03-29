@@ -1,0 +1,195 @@
+name: OpenTofu Apply
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  statuses: write
+
+jobs:
+  apply-from-comment:
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      github.event.comment.body == '/tf-apply' &&
+      github.event.comment.user.login == 'turtton'
+    runs-on: ubuntu-latest
+    env:
+      TF_VAR_state_encryption_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
+      TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Add reaction to comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket'
+            });
+
+      - name: Get PR branch
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            core.setOutput('ref', pr.data.head.ref);
+            core.setOutput('sha', pr.data.head.sha);
+
+      - name: Set pending commit status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: '${{ steps.pr.outputs.sha }}',
+              state: 'pending',
+              context: 'OpenTofu Apply',
+              description: 'Apply is running...',
+              target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            });
+
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.ref }}
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+
+      - name: OpenTofu Init
+        working-directory: terraform
+        run: tofu init
+
+      - name: OpenTofu Apply
+        id: apply
+        working-directory: terraform
+        run: |
+          set +e
+          tofu apply -auto-approve -no-color 2>&1 | tee /tmp/tofu-apply.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          {
+            echo "output<<TOFU_EOF"
+            tail -80 /tmp/tofu-apply.log
+            echo "TOFU_EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          exit $EXIT_CODE
+
+      - name: Commit encrypted state
+        if: success()
+        working-directory: terraform
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add terraform.tfstate
+          if git diff --cached --quiet; then
+            echo "No state changes to commit"
+          else
+            git commit -m "Update encrypted terraform state"
+            git pull --rebase
+            git push
+          fi
+
+      - name: Comment apply result on PR
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          APPLY_OUTPUT: ${{ steps.apply.outputs.output }}
+          APPLY_EXIT_CODE: ${{ steps.apply.outputs.exit_code }}
+        with:
+          script: |
+            const marker = '<!-- tofu-apply -->';
+            const exitCode = process.env.APPLY_EXIT_CODE;
+            const status = exitCode === '0' ? '✅ Apply succeeded' : '❌ Apply failed';
+            const output = process.env.APPLY_OUTPUT;
+            const body = `${marker}\n### ${status}\n\n<details><summary>OpenTofu output</summary>\n\n\`\`\`\n${output}\n\`\`\`\n\n</details>`;
+            const { data: comments } = await github.rest.issues.listComments({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            const existing = comments.find(c => c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body
+              });
+            }
+
+      - name: Set final commit status
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          APPLY_EXIT_CODE: ${{ steps.apply.outputs.exit_code }}
+        with:
+          script: |
+            const exitCode = process.env.APPLY_EXIT_CODE;
+            const state = exitCode === '0' ? 'success' : 'failure';
+            const description = exitCode === '0' ? 'Apply succeeded' : 'Apply failed';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: '${{ steps.pr.outputs.sha }}',
+              state: state,
+              context: 'OpenTofu Apply',
+              description: description,
+              target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            });
+
+  apply-manual:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      TF_VAR_state_encryption_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
+      TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+
+      - name: OpenTofu Init
+        working-directory: terraform
+        run: tofu init
+
+      - name: OpenTofu Apply
+        working-directory: terraform
+        run: tofu apply -auto-approve -no-color
+
+      - name: Commit encrypted state
+        if: success()
+        working-directory: terraform
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add terraform.tfstate
+          if git diff --cached --quiet; then
+            echo "No state changes to commit"
+          else
+            git commit -m "Update encrypted terraform state"
+            git pull --rebase
+            git push
+          fi

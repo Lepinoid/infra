@@ -24,10 +24,16 @@
             # Secret management
             sops
             age
+            # Terraform
+            opentofu
           ];
           env = {
             SOPS_AGE_KEY_CMD = "rbw get lepinoid-infra-age-key";
           };
+          shellHook = ''
+            export TF_VAR_state_encryption_passphrase=$(command -v rbw >/dev/null 2>&1 && rbw get lepinoid-infra-tf-state-encryption || echo "missing");
+            export TF_VAR_cloudflare_api_token=$(command -v rbw >/dev/null 2>&1 && rbw get lepinoid-infra-cloudflare-api-token || echo "missing");
+          '';
         };
       }
     );

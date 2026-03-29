@@ -1,0 +1,77 @@
+name: OpenTofu Plan
+
+on:
+  pull_request:
+    paths:
+      - "terraform/**"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    env:
+      TF_VAR_state_encryption_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
+      TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+
+      - name: OpenTofu Init
+        working-directory: terraform
+        run: tofu init
+
+      - name: OpenTofu Plan
+        id: plan
+        working-directory: terraform
+        run: |
+          set +e
+          tofu plan -no-color 2>&1 | tee /tmp/tofu-plan.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          {
+            echo "output<<TOFU_EOF"
+            tail -80 /tmp/tofu-plan.log
+            echo "TOFU_EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          exit $EXIT_CODE
+
+      - name: Comment plan result on PR
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          PLAN_OUTPUT: ${{ steps.plan.outputs.output }}
+          PLAN_EXIT_CODE: ${{ steps.plan.outputs.exit_code }}
+        with:
+          script: |
+            const marker = '<!-- tofu-plan -->';
+            const exitCode = process.env.PLAN_EXIT_CODE;
+            const status = exitCode === '0' ? '✅ Plan succeeded' : '❌ Plan failed';
+            const output = process.env.PLAN_OUTPUT;
+            const body = `${marker}\n### ${status}\n\n<details><summary>OpenTofu output</summary>\n\n\`\`\`\n${output}\n\`\`\`\n\n</details>\n\nComment \`/tf-apply\` to apply these changes.`;
+            const { data: comments } = await github.rest.issues.listComments({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            const existing = comments.find(c => c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body
+              });
+            }
