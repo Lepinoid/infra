@@ -11,7 +11,7 @@ data:
     AUTH="${COUCHDB_USER}:${COUCHDB_PASSWORD}"
 
     echo "[setup] Waiting for CouchDB..."
-    until curl -sf "${COUCHDB_URL}/_up" > /dev/null 2>&1; do
+    until curl -sf "http://${AUTH}@localhost:5984/_up" > /dev/null 2>&1; do
       sleep 2
     done
     echo "[setup] CouchDB is ready"
