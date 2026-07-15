@@ -20,8 +20,13 @@ spec:
           command:
             - sh
             - -c
-            - until pg_isready -h lepinoid-db -U postgres; do echo waiting for db; sleep 2; done
+            - until pg_isready -h lepinoid-db -U "$POSTGRES_USER"; do echo waiting for db; sleep 2; done
           env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: lepinoid-db-credentials
+                  key: POSTGRES_USER
             - name: PGPASSWORD
               valueFrom:
                 secretKeyRef:
@@ -42,6 +47,11 @@ spec:
             - |
               envsubst < /config-template/database.json > /config/database.json
           env:
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: lepinoid-db-credentials
+                  key: POSTGRES_USER
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:

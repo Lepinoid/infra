@@ -8,7 +8,7 @@ data:
       "isEnable": true,
       "url": "//lepinoid-db:5432",
       "name": "lepinoid",
-      "user": "postgres",
+      "user": "${DB_USER}",
       "pass": "${DB_PASSWORD}",
       "init": "",
       "configs": {},
