@@ -33,6 +33,8 @@ spec:
                 secretKeyRef:
                   name: lepinoid-db-credentials
                   key: POSTGRES_DB
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
           ports:
             - name: postgres
               containerPort: 5432
