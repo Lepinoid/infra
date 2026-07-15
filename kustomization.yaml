@@ -20,3 +20,12 @@ resources:
   - grafana/pvc.yaml
   - grafana/deployment.yaml
   - grafana/service.yaml
+  - lepinoid/db-credentials.sops.yaml
+  - lepinoid/db-init.sql.yaml
+  - lepinoid/database-config.yaml
+  - lepinoid/db-pvc.yaml
+  - lepinoid/db-deployment.yaml
+  - lepinoid/db-service.yaml
+  - lepinoid/pvc.yaml
+  - lepinoid/deployment.yaml
+  - lepinoid/service.yaml

@@ -1,0 +1,158 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lepinoid-db-init-sql
+data:
+  01-init.sql: |
+    -- Player informations --
+    CREATE TABLE IF NOT EXISTS accounts
+    (
+        player_id  UUID        NOT NULL,
+        profile_id UUID        NOT NULL UNIQUE,
+        created_at TIMESTAMPTZ NOT NULL,
+
+        PRIMARY KEY (player_id, profile_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS player_profiles
+    (
+        profile_id     UUID        NOT NULL PRIMARY KEY,
+        rank           VARCHAR(16) NOT NULL,
+        balance        BIGINT      NOT NULL,
+        experience     INT         NOT NULL,
+        played_min     INT         NOT NULL,
+        last_played_at TIMESTAMPTZ NOT NULL,
+
+        FOREIGN KEY (profile_id) REFERENCES accounts (profile_id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS worlds
+    (
+        profile_id UUID        NOT NULL PRIMARY KEY,
+        world      VARCHAR(16) NOT NULL,
+
+        FOREIGN KEY (profile_id) REFERENCES accounts (profile_id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS skills
+    (
+        profile_id UUID        NOT NULL,
+        skill_type VARCHAR(16) NOT NULL,
+        experience INT         NOT NULL,
+
+        PRIMARY KEY (profile_id, skill_type),
+        FOREIGN KEY (profile_id) REFERENCES accounts (profile_id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS known_items
+    (
+        profile_id UUID        NOT NULL,
+        item_type  VARCHAR(64) NOT NULL,
+        found_at   TIMESTAMPTZ NOT NULL,
+
+        PRIMARY KEY (profile_id, item_type),
+        FOREIGN KEY (profile_id) REFERENCES accounts (profile_id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS known_recipes
+    (
+        profile_id UUID        NOT NULL,
+        recipe_id  VARCHAR(64) NOT NULL,
+        found_at   TIMESTAMPTZ NOT NULL,
+
+        PRIMARY KEY (profile_id, recipe_id),
+        FOREIGN KEY (profile_id) REFERENCES accounts (profile_id) ON DELETE CASCADE
+    );
+
+    -- Quest
+    CREATE TABLE IF NOT EXISTS sections
+    (
+        profile_id  UUID        NOT NULL,
+        quest_id    TEXT        NOT NULL,
+        section_id  TEXT        NOT NULL,
+        achieved_at TIMESTAMPTZ NOT NULL,
+
+        PRIMARY KEY (profile_id, section_id),
+        FOREIGN KEY (profile_id) REFERENCES accounts (profile_id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS quest_ui_settings
+    (
+        profile_id           UUID    NOT NULL PRIMARY KEY,
+        show_main_quest      BOOLEAN NOT NULL,
+        show_sub_quest       BOOLEAN NOT NULL,
+        show_completed_quest BOOLEAN NOT NULL,
+        FOREIGN KEY (profile_id) REFERENCES accounts (profile_id) ON DELETE CASCADE
+    );
+
+    -- Item informations --
+    CREATE TABLE IF NOT EXISTS item_informations
+    (
+        item_id         UUID        NOT NULL PRIMARY KEY,
+        item_type       VARCHAR(32) NOT NULL,
+        item_quality    FLOAT,
+        amount          INT         NOT NULL,
+        reforged_amount INT
+    );
+
+    CREATE TABLE IF NOT EXISTS item_identities
+    (
+        item_id        UUID        NOT NULL PRIMARY KEY,
+        owner          UUID,
+        current_owner  UUID,
+        created_by     TEXT        NOT NULL,
+        created_at     TIMESTAMPTZ NOT NULL,
+        transferred_at TIMESTAMPTZ,
+
+        FOREIGN KEY (item_id) REFERENCES item_informations (item_id) ON DELETE CASCADE,
+        FOREIGN KEY (owner) REFERENCES accounts (profile_id) ON DELETE SET NULL,
+        FOREIGN KEY (current_owner) REFERENCES accounts (profile_id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS enchantments
+    (
+        item_id    UUID        NOT NULL,
+        enchant_id VARCHAR(32) NOT NULL,
+        level      INT         NOT NULL,
+
+        PRIMARY KEY (item_id, enchant_id),
+        FOREIGN KEY (item_id) REFERENCES item_informations (item_id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS charms
+    (
+        item_id  UUID        NOT NULL,
+        slot     INT         NOT NULL,
+        charm_id VARCHAR(32) NOT NULL,
+
+        PRIMARY KEY (item_id, slot),
+        FOREIGN KEY (item_id) REFERENCES item_informations (item_id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS item_durabilities
+    (
+        item_id    UUID NOT NULL PRIMARY KEY,
+        used_times INT  NOT NULL,
+
+        FOREIGN KEY (item_id) REFERENCES item_informations (item_id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS item_magic_points
+    (
+        item_id          UUID NOT NULL PRIMARY KEY,
+        max_magic_points INT  NOT NULL,
+        magic_points     INT  NOT NULL,
+        FOREIGN KEY (item_id) REFERENCES item_informations (item_id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS inventories
+    (
+        profile_id     UUID        NOT NULL,
+        inventory_type VARCHAR(32) NOT NULL,
+        slot           INT         NOT NULL,
+        item_id        UUID,
+
+        PRIMARY KEY (profile_id, inventory_type, slot),
+        FOREIGN KEY (profile_id) REFERENCES accounts (profile_id) ON DELETE CASCADE,
+        FOREIGN KEY (item_id) REFERENCES item_informations (item_id) ON DELETE CASCADE
+    );

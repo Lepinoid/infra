@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lepinoid-database-config
+data:
+  database.json: |
+    {
+      "isEnable": true,
+      "url": "//lepinoid-db:5432",
+      "name": "lepinoid",
+      "user": "postgres",
+      "pass": "${DB_PASSWORD}",
+      "init": "",
+      "configs": {},
+      "amounts": {
+        "maxPoolSize": 10,
+        "maxLifeTime": 1800000,
+        "connectionTimeout": 30000,
+        "idleTimeout": 600000
+      }
+    }

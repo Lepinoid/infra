@@ -28,7 +28,7 @@ jobs:
       TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
       - name: Add reaction to comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           script: |
             github.rest.reactions.createForIssueComment({
@@ -40,7 +40,7 @@ jobs:
 
       - name: Get PR branch
         id: pr
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           script: |
             const pr = await github.rest.pulls.get({
@@ -52,7 +52,7 @@ jobs:
             core.setOutput('sha', pr.data.head.sha);
 
       - name: Set pending commit status
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           script: |
             await github.rest.repos.createCommitStatus({
@@ -66,12 +66,12 @@ jobs:
             });
 
       - name: Checkout PR branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ steps.pr.outputs.ref }}
 
       - name: Setup OpenTofu
-        uses: opentofu/setup-opentofu@v1
+        uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f # v1.0.8
 
       - name: OpenTofu Init
         working-directory: terraform
@@ -109,7 +109,7 @@ jobs:
 
       - name: Comment apply result on PR
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
           APPLY_OUTPUT: ${{ steps.apply.outputs.output }}
           APPLY_EXIT_CODE: ${{ steps.apply.outputs.exit_code }}
@@ -144,7 +144,7 @@ jobs:
 
       - name: Set final commit status
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
           APPLY_EXIT_CODE: ${{ steps.apply.outputs.exit_code }}
         with:
@@ -170,12 +170,12 @@ jobs:
       TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ github.ref_name }}
 
       - name: Setup OpenTofu
-        uses: opentofu/setup-opentofu@v1
+        uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f # v1.0.8
 
       - name: OpenTofu Init
         working-directory: terraform

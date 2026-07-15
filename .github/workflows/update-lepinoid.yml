@@ -1,0 +1,69 @@
+name: Update lepinoid deployment image
+
+on:
+  repository_dispatch:
+    types: [lepinoid-image-update]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag to deploy (short SHA, e.g. 98481da)"
+        required: false
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  update-image:
+    name: Update deployment image tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # git push to update lepinoid/deployment.yaml
+      packages: read  # query ghcr for latest image SHA
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Get latest SHA tag from GHCR
+        if: github.event_name != 'workflow_dispatch' || !inputs.tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA=$(gh api /orgs/Lepinoid/packages/container/lepinoid/versions \
+            --jq '[.[] | select(.metadata.container.tags[] | contains("main")) | .metadata.container.tags[] | select(length == 7)] | .[0]')
+          if [ -z "$SHA" ]; then
+            echo "Failed to get SHA tag from GHCR" >&2
+            exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_ENV"
+
+      - name: Resolve inputs
+        env:
+          INPUT_TAG: ${{ inputs.tag || '' }}
+        run: |
+          TAG="${INPUT_TAG:-${sha}}"
+          echo "tag=$TAG" >> "$GITHUB_ENV"
+
+      - name: Update deployment image tag
+        run: |
+          sed -i "s|image: ghcr.io/Lepinoid/lepinoid:.*|image: ghcr.io/Lepinoid/lepinoid:${tag}|" lepinoid/deployment.yaml
+
+      - name: Commit and push
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git"
+          git add lepinoid/deployment.yaml
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "chore(lepinoid): update image tag to ${tag}"
+          git push
