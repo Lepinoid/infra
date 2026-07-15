@@ -31,7 +31,7 @@ jobs:
       - name: Get latest SHA tag from GHCR
         if: github.event_name != 'workflow_dispatch' || !inputs.tag
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
           SHA=$(gh api /orgs/Lepinoid/packages/container/lepinoid/versions \
             --jq '[.[] | select(.metadata.container.tags[] | contains("main")) | .metadata.container.tags[] | select(length == 7)] | .[0]')
@@ -50,7 +50,7 @@ jobs:
 
       - name: Update deployment image tag
         run: |
-          sed -i "s|image: ghcr.io/Lepinoid/lepinoid:.*|image: ghcr.io/Lepinoid/lepinoid:${tag}|" lepinoid/deployment.yaml
+          sed -i "s|image: ghcr.io/lepinoid/lepinoid:.*|image: ghcr.io/lepinoid/lepinoid:${tag}|" lepinoid/deployment.yaml
 
       - name: Commit and push
         env:
