@@ -20,6 +20,7 @@ resources:
   - grafana/pvc.yaml
   - grafana/deployment.yaml
   - grafana/service.yaml
+  - lepinoid/ghcr-pull-secret.sops.yaml
   - lepinoid/db-credentials.sops.yaml
   - lepinoid/db-init.sql.yaml
   - lepinoid/db-pvc.yaml
