@@ -40,11 +40,28 @@ spec:
               cpu: 50m
               memory: 64Mi
         - name: render-database-config
-          image: alpine:3.20
+          image: busybox:1.36
           command:
             - sh
             - -c
-            - apk add -q gettext && envsubst < /config-template/database.json > /config/database.json
+            - |
+              cat > /config/database.json << EOF
+              {
+                "isEnable": true,
+                "url": "//lepinoid-db:5432",
+                "name": "lepinoid",
+                "user": "${DB_USER}",
+                "pass": "${DB_PASSWORD}",
+                "init": "",
+                "configs": {},
+                "amounts": {
+                  "maxPoolSize": 10,
+                  "maxLifeTime": 1800000,
+                  "connectionTimeout": 30000,
+                  "idleTimeout": 600000
+                }
+              }
+              EOF
           env:
             - name: DB_USER
               valueFrom:
@@ -57,9 +74,6 @@ spec:
                   name: lepinoid-db-credentials
                   key: POSTGRES_PASSWORD
           volumeMounts:
-            - name: lepinoid-database-config-template
-              mountPath: /config-template
-              readOnly: true
             - name: lepinoid-database-config
               mountPath: /config
           resources:
@@ -110,8 +124,5 @@ spec:
         - name: lepinoid-data
           persistentVolumeClaim:
             claimName: lepinoid-data
-        - name: lepinoid-database-config-template
-          configMap:
-            name: lepinoid-database-config
         - name: lepinoid-database-config
           emptyDir: {}

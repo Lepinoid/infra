@@ -22,7 +22,6 @@ resources:
   - grafana/service.yaml
   - lepinoid/db-credentials.sops.yaml
   - lepinoid/db-init.sql.yaml
-  - lepinoid/database-config.yaml
   - lepinoid/db-pvc.yaml
   - lepinoid/db-deployment.yaml
   - lepinoid/db-service.yaml
