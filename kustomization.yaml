@@ -29,3 +29,4 @@ resources:
   - lepinoid/pvc.yaml
   - lepinoid/deployment.yaml
   - lepinoid/service.yaml
+  - lepinoid/network-policy.yaml
