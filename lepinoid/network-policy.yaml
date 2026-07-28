@@ -17,3 +17,17 @@ spec:
       ports:
         - protocol: TCP
           port: 25565
+---
+# lepinoid アプリからの Egress 許可（Mojang API / 認証データ取得など外部 HTTPS 用）
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-lepinoid-egress
+spec:
+  podSelector:
+    matchLabels:
+      app: lepinoid
+  policyTypes:
+    - Egress
+  egress:
+    - {}
