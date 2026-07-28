@@ -22,13 +22,18 @@ spec:
           command:
             - sh
             - -c
-            - until pg_isready -h lepinoid-db -U "$POSTGRES_USER"; do echo waiting for db; sleep 2; done
+            - until pg_isready -h lepinoid-db -U "$POSTGRES_USER" -d "$POSTGRES_DB"; do echo waiting for db; sleep 2; done
           env:
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
                   name: lepinoid-db-credentials
                   key: POSTGRES_USER
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: lepinoid-db-credentials
+                  key: POSTGRES_DB
             - name: PGPASSWORD
               valueFrom:
                 secretKeyRef:
