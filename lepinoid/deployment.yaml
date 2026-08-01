@@ -46,7 +46,7 @@ spec:
             limits:
               cpu: 50m
               memory: 64Mi
-        - name: render-database-config
+        - name: render-configs
           image: busybox:1.36
           command:
             - sh
@@ -69,6 +69,14 @@ spec:
                 }
               }
               EOF
+              cat > /config/auth.json << EOF
+              {
+                "disable": false,
+                "repository": "Lepinoid/OperatorInfo",
+                "filePath": "operators.yml",
+                "githubToken": "${GITHUB_TOKEN}"
+              }
+              EOF
           env:
             - name: DB_USER
               valueFrom:
@@ -80,8 +88,13 @@ spec:
                 secretKeyRef:
                   name: lepinoid-db-credentials
                   key: POSTGRES_PASSWORD
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: lepinoid-auth
+                  key: GITHUB_TOKEN
           volumeMounts:
-            - name: lepinoid-database-config
+            - name: lepinoid-configs
               mountPath: /config
           resources:
             requests:
@@ -106,9 +119,13 @@ spec:
           volumeMounts:
             - name: lepinoid-data
               mountPath: /data
-            - name: lepinoid-database-config
+            - name: lepinoid-configs
               mountPath: /data/config/lepinoid/database.json
               subPath: database.json
+              readOnly: true
+            - name: lepinoid-configs
+              mountPath: /data/config/lepinoid/auth.json
+              subPath: auth.json
               readOnly: true
           livenessProbe:
             tcpSocket:
@@ -131,5 +148,5 @@ spec:
         - name: lepinoid-data
           persistentVolumeClaim:
             claimName: lepinoid-data
-        - name: lepinoid-database-config
+        - name: lepinoid-configs
           emptyDir: {}
