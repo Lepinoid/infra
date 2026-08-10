@@ -105,7 +105,7 @@ spec:
               memory: 32Mi
       containers:
         - name: lepinoid
-          image: ghcr.io/lepinoid/lepinoid:441ff14
+          image: ghcr.io/lepinoid/lepinoid:71aec95
           imagePullPolicy: Always
           env:
             - name: EULA
