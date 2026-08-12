@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: paper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: paper
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: paper
+    spec:
+      # LepinoidTools プラグインがシャットダウン時に git バックアップを完了する時間を確保
+      terminationGracePeriodSeconds: 120
+      containers:
+        - name: paper
+          image: itzg/minecraft-server:java21
+          env:
+            - name: EULA
+              value: "TRUE"
+            - name: TYPE
+              value: "PAPER"
+            - name: MEMORY
+              value: "12G"
+            - name: USE_AIKAR_FLAGS
+              value: "TRUE"
+            - name: ENABLE_ROLLING_LOGS
+              value: "TRUE"
+            - name: OPS
+              value: "turtton"
+          ports:
+            - name: minecraft
+              containerPort: 25565
+              protocol: TCP
+          volumeMounts:
+            - name: paper-data
+              mountPath: /data
+          livenessProbe:
+            tcpSocket:
+              port: minecraft
+            initialDelaySeconds: 120
+            periodSeconds: 30
+          readinessProbe:
+            tcpSocket:
+              port: minecraft
+            initialDelaySeconds: 60
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 2
+              memory: 12Gi
+            limits:
+              # FAWE による大規模ブロック編集時のバースト用 (旧LXCの8コア相当)
+              cpu: 8
+              memory: 16Gi
+      volumes:
+        - name: paper-data
+          persistentVolumeClaim:
+            claimName: paper-data

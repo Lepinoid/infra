@@ -1,0 +1,91 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: paper-backup
+---
+# VolumeSnapshot の作成・世代削除のみ許可
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: paper-backup
+rules:
+  - apiGroups:
+      - snapshot.storage.k8s.io
+    resources:
+      - volumesnapshots
+    verbs:
+      - get
+      - list
+      - create
+      - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: paper-backup
+subjects:
+  - kind: ServiceAccount
+    name: paper-backup
+roleRef:
+  kind: Role
+  name: paper-backup
+  apiGroup: rbac.authorization.k8s.io
+---
+# 毎日 JST 03:00 に paper-data の VolumeSnapshot を取得し、7世代を超えたものを削除
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: paper-backup
+spec:
+  schedule: "0 3 * * *"
+  timeZone: Asia/Tokyo
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: paper-backup
+        spec:
+          serviceAccountName: paper-backup
+          restartPolicy: OnFailure
+          containers:
+            - name: kubectl
+              image: bitnami/kubectl:latest
+              env:
+                - name: POD_NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  NAME="paper-data-$(date +%Y%m%d-%H%M%S)"
+                  kubectl apply -n "$POD_NAMESPACE" -f - <<EOF
+                  apiVersion: snapshot.storage.k8s.io/v1
+                  kind: VolumeSnapshot
+                  metadata:
+                    name: $NAME
+                    labels:
+                      app: paper
+                      backup: paper-daily
+                  spec:
+                    volumeSnapshotClassName: longhorn
+                    source:
+                      persistentVolumeClaimName: paper-data
+                  EOF
+                  echo "created VolumeSnapshot $NAME"
+                  kubectl get volumesnapshots -n "$POD_NAMESPACE" -l app=paper,backup=paper-daily \
+                    --sort-by=.metadata.creationTimestamp -o name | head -n -7 | xargs -r kubectl delete
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  cpu: 100m
+                  memory: 128Mi
