@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: lepinoid
 spec:
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app: lepinoid
