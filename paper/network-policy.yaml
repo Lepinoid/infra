@@ -1,0 +1,48 @@
+---
+# Tailscale Operator (tailscale namespace) からの Ingress 許可
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-paper-tailscale-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: paper
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tailscale
+      ports:
+        - protocol: TCP
+          port: 25565
+---
+# paper からの Egress 許可 (PaperMC ダウンロード / プラグインの GitHub push 等)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-paper-egress
+spec:
+  podSelector:
+    matchLabels:
+      app: paper
+  policyTypes:
+    - Egress
+  egress:
+    - {}
+---
+# バックアップ CronJob からの Egress 許可 (kube-apiserver 通信)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-paper-backup-egress
+spec:
+  podSelector:
+    matchLabels:
+      app: paper-backup
+  policyTypes:
+    - Egress
+  egress:
+    - {}

@@ -39,11 +39,11 @@ SOPS の Age 秘密鍵は `SOPS_AGE_KEY_CMD` 経由で Bitwarden CLI (`rbw get l
 
 | リソース | 上限 |
 |----------|------|
-| requests.cpu | 1 |
-| requests.memory | 2Gi |
-| limits.cpu | 2 |
-| limits.memory | 4Gi |
-| PVC 数 | 5 |
+| requests.cpu | 4 |
+| requests.memory | 16Gi |
+| limits.cpu | 12 |
+| limits.memory | 24Gi |
+| PVC 数 | 12 |
 
 ## Architecture
 
@@ -57,8 +57,14 @@ kustomization.yaml          ← 全リソースのエントリポイント
 │   └── commit.sh: vault 変更を検知し git commit/push (ローカル優先) / pull (リモート優先)
 ├── cloudflared/            ← Cloudflare Tunnel (token ベース, remotely-managed)
 │   └── NetworkPolicy: base の default-deny に対する egress 許可
-└── grafana/                ← スタンドアロン Grafana (grafana:11.5.2)
-    └── Cloudflare Access auth proxy (Cf-Access-Authenticated-User-Email ヘッダー)
+├── grafana/                ← スタンドアロン Grafana (grafana:11.5.2)
+│   └── Cloudflare Access auth proxy (Cf-Access-Authenticated-User-Email ヘッダー)
+├── lepinoid/               ← lepinoid 開発用 MC サーバー (ghcr.io/lepinoid/lepinoid)
+│   └── Tailscale LoadBalancer (lepinoid-dev) + postgres DB
+└── paper/                  ← Paper サーバー (itzg/minecraft-server:java21, MEMORY=12G)
+    ├── Tailscale LoadBalancer (lepinoid-paper, tag:mcserver)
+    ├── LepinoidTools プラグインの git バックアップは config.yml (PVC上) で動作
+    └── backup.yaml: 日次 VolumeSnapshot CronJob (7世代保持, VolumeSnapshotClass "longhorn")
 ```
 
 Flux CD がこのリポジトリを GitRepository として監視し、`lepinoid` namespace にリソースを reconcile する。

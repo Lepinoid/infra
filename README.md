@@ -12,6 +12,7 @@ Flux CD がこのリポジトリを監視し、`lepinoid` namespace にリソー
 | **LiveSync Bridge** | CouchDB と Git リポジトリ間の vault 同期ブリッジ |
 | **Cloudflared** | Cloudflare Tunnel による外部アクセス（token ベース） |
 | **Grafana** | Prometheus 接続のモニタリングダッシュボード。Cloudflare Access 認証 |
+| **Paper** | Paper MC サーバー。Tailscale LoadBalancer 公開、LepinoidTools プラグインによる git バックアップ + 日次 VolumeSnapshot |
 
 ## Secret Management
 
