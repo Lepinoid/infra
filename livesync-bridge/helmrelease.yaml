@@ -21,6 +21,7 @@ spec:
         kind: HelmRepository
         name: livesync-bridge
   values:
+    replicaCount: 1
     vaultName: lepinoid
     resources:
       requests:
