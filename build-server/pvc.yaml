@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: build-server-data
+  labels:
+    recurring-job-group.longhorn.io/gameserver: enabled
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn-gameserver
+  resources:
+    requests:
+      storage: 50Gi
