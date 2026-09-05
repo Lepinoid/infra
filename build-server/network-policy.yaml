@@ -1,0 +1,35 @@
+---
+# Tailscale Operator (tailscale namespace) からの Ingress 許可
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-build-server-tailscale-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: build-server
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tailscale
+      ports:
+        - protocol: TCP
+          port: 25565
+---
+# build-server からの Egress 許可
+# Paper 本体ダウンロード / GitHub への git push (LepinoidTools AutoCommit) など外部 HTTPS 用
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-build-server-egress
+spec:
+  podSelector:
+    matchLabels:
+      app: build-server
+  policyTypes:
+    - Egress
+  egress:
+    - {}
