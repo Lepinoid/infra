@@ -31,3 +31,12 @@ resources:
   - lepinoid/deployment.yaml
   - lepinoid/service.yaml
   - lepinoid/network-policy.yaml
+  - build-server/mysql-credentials.sops.yaml
+  - build-server/git-credentials.sops.yaml
+  - build-server/pvc.yaml
+  - build-server/mysql-pvc.yaml
+  - build-server/deployment.yaml
+  - build-server/service.yaml
+  - build-server/mysql-deployment.yaml
+  - build-server/mysql-service.yaml
+  - build-server/backup-cronjob.yaml

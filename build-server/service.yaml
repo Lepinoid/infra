@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: build-server
+  annotations:
+    tailscale.com/hostname: build-server
+    tailscale.com/tags: "tag:mcserver"
+spec:
+  type: LoadBalancer
+  loadBalancerClass: tailscale
+  selector:
+    app: build-server
+  ports:
+    - name: minecraft
+      port: 25565
+      targetPort: minecraft
+      protocol: TCP

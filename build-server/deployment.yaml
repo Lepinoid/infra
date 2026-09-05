@@ -1,0 +1,122 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: build-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: build-server
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: build-server
+    spec:
+      # atm10 と同様のポッドレベル seccomp 設定（fsGroup は itzg イメージが権限を処理するため不要）
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 120
+      initContainers:
+        # LepinoidTools AutoCommit プラグイン用の git 認証情報を /data に展開する。
+        # itzg イメージは HOME=/data で UID 1000 として起動するため、
+        # root で実行した後に chown 1000:1000 + chmod 600 する。
+        - name: git-credentials
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              cat > /data/.git-credentials << EOF
+              https://lepinoid-project:${TOKEN}@github.com
+              EOF
+              cat > /data/.gitconfig << EOF
+              [user]
+                  name = lepinoid-project
+                  email = ${EMAIL}
+              [credential]
+                  helper = store
+              [safe]
+                  directory = *
+              EOF
+              chown 1000:1000 /data/.git-credentials /data/.gitconfig
+              chmod 600 /data/.git-credentials /data/.gitconfig
+          env:
+            - name: TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: build-server-git-credentials
+                  key: token
+            - name: EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: build-server-git-credentials
+                  key: email
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: git-credentials
+              mountPath: /git-credentials
+              readOnly: true
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              cpu: 10m
+              memory: 32Mi
+      containers:
+        - name: minecraft
+          image: itzg/minecraft-server:latest
+          imagePullPolicy: Always
+          env:
+            - name: EULA
+              value: "true"
+            - name: TYPE
+              value: PAPER
+            - name: VERSION
+              value: "1.21.1"
+            - name: MEMORY
+              value: 12G
+            - name: TZ
+              value: Asia/Tokyo
+            - name: USE_AIKAR_FLAGS
+              value: "true"
+            - name: SERVER_PORT
+              value: "25565"
+          ports:
+            - name: minecraft
+              containerPort: 25565
+              protocol: TCP
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          livenessProbe:
+            tcpSocket:
+              port: minecraft
+            initialDelaySeconds: 120
+            periodSeconds: 30
+          readinessProbe:
+            tcpSocket:
+              port: minecraft
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 1
+              memory: 8Gi
+            limits:
+              cpu: 6
+              memory: 14Gi
+      # longhorn-gameserver は strict-local のため mainworker-1 へのピン留めが必須
+      nodeSelector:
+        kubernetes.io/hostname: mainworker-1
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: build-server-data
+        - name: git-credentials
+          secret:
+            secretName: build-server-git-credentials

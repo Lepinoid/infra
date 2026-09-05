@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: build-server-mysql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: build-server-mysql
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: build-server-mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.4
+          args:
+            # CoreProtect による書き込みで binlog が肥大化するのを抑える（1日で失効）
+            - --binlog-expire-logs-seconds=86400
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: build-server-mysql-credentials
+                  key: MYSQL_ROOT_PASSWORD
+            - name: MYSQL_DATABASE
+              value: coreprotect
+            - name: MYSQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: build-server-mysql-credentials
+                  key: MYSQL_USER
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: build-server-mysql-credentials
+                  key: MYSQL_PASSWORD
+          ports:
+            - name: mysql
+              containerPort: 3306
+              protocol: TCP
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - mysqladmin ping -h 127.0.0.1 -p"$MYSQL_ROOT_PASSWORD"
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - mysqladmin ping -h 127.0.0.1 -p"$MYSQL_ROOT_PASSWORD"
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: 1
+              memory: 2Gi
+      # longhorn-gameserver は strict-local のため mainworker-1 へのピン留めが必須
+      nodeSelector:
+        kubernetes.io/hostname: mainworker-1
+      volumes:
+        - name: mysql-data
+          persistentVolumeClaim:
+            claimName: build-server-mysql-data
