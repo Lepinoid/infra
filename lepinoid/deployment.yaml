@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: lepinoid
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app: lepinoid
@@ -14,6 +14,17 @@ spec:
       labels:
         app: lepinoid
     spec:
+      # strict-local 依存がないため固定 (nodeSelector) ではなく優先配置とする
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - mainworker-1
       imagePullSecrets:
         - name: ghcr-pull-secret
       initContainers:
@@ -142,7 +153,7 @@ spec:
               cpu: 500m
               memory: 1Gi
             limits:
-              cpu: 1
+              cpu: 2
               memory: 2.5Gi
       volumes:
         - name: lepinoid-data

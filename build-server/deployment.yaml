@@ -78,7 +78,10 @@ spec:
               value: PAPER
             - name: VERSION
               value: "1.21.1"
-            - name: MEMORY
+            # itzg では MAX_MEMORY だけの指定だと INIT_MEMORY も同値になるため両方を指定する
+            - name: INIT_MEMORY
+              value: 2G
+            - name: MAX_MEMORY
               value: 12G
             - name: TZ
               value: Asia/Tokyo
@@ -106,7 +109,8 @@ spec:
           resources:
             requests:
               cpu: 1
-              memory: 8Gi
+              # Xms 2G + offheap 分を見込む
+              memory: 3Gi
             limits:
               cpu: 6
               memory: 14Gi
