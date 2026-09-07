@@ -836,13 +836,13 @@ func runTransaction(ctx context.Context, lock *lease.Lease) error {
 		commands: cluster.Commands{Timeout: 20 * time.Second},
 		store:    store,
 		now:      time.Now,
-		podUID:   os.Getenv("POD_UID"),
 	}
 	pod, err := t.commands.Pod(ctx)
 	if err != nil {
 		return err
 	}
 	t.podName = pod.Name
+	t.podUID = pod.UID
 	fence := updaterengine.Fence{
 		Lease: func(c context.Context) error { return lock.Check(c) },
 		Observe: func(c context.Context) (updaterengine.Observation, error) {

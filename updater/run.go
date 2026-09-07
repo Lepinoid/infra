@@ -13,7 +13,7 @@ import (
 var errTransactionUnavailable = errors.New("transaction runner is not yet integrated; refusing all PVC mutations")
 
 func run(ctx context.Context) error {
-	holder := os.Getenv("POD_UID")
+	holder := os.Getenv("JOB_UID")
 	if holder == "" {
 		return errUsage
 	}

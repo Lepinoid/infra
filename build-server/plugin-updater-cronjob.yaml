@@ -1,0 +1,42 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: plugin-updater
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 120
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 1740
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            app: plugin-updater-job
+        spec:
+          serviceAccountName: plugin-updater
+          restartPolicy: Never
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: updater
+              image: ghcr.io/lepinoid/plugin-updater:REPLACE_WITH_DIGEST
+              imagePullPolicy: IfNotPresent
+              args: ["run"]
+              env:
+                - name: JOB_UID
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.uid
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 256Mi

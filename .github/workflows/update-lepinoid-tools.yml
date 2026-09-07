@@ -47,7 +47,7 @@ jobs:
             [[ "$head" =~ ^[0-9a-f]{40}$ ]]
             test "$head" = "$(jq -er .pluginCommitSha "$RUNNER_TEMP/desired.json")"
           fi
-          jq -n --slurpfile desired "$RUNNER_TEMP/desired.json" '{apiVersion:"v1",kind:"ConfigMap",metadata:{name:"plugin-versions"},data:{"plugin-versions.yaml":($desired[0]|tojson)}}' > build-server/plugin-versions.yaml
+          jq -n --slurpfile desired "$RUNNER_TEMP/desired.json" '{apiVersion:"v1",kind:"ConfigMap",metadata:{name:"plugin-versions"},data:{"desired.json":($desired[0]|tojson)}}' > build-server/plugin-versions.yaml
           git add build-server/plugin-versions.yaml
           if git diff --cached --quiet; then exit 0; fi
           version=$(jq -er .version "$RUNNER_TEMP/desired.json")
