@@ -6,16 +6,19 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/lepinoid/infra/updater/internal/fsutil"
 )
 
 type Store struct{ Root string }
 type Inventory struct {
-	Blocked  bool
-	Journals []Journal
-	Recovery []Recovery
-	Flag     *Flag
+	Blocked          bool
+	Journals         []Journal
+	Recovery         []Recovery
+	Flag             *Flag
+	Probes           []Probe
+	ProbeInterrupted bool
 }
 
 func Read[T any](path string) (T, error) {
@@ -78,6 +81,23 @@ func (s Store) Inspect() (Inventory, error) {
 		}
 		if entry.IsDir() {
 			return state, ErrSchema
+		}
+		if strings.HasSuffix(entry.Name(), ".probe") {
+			probe, err := Read[Probe](s.Path("journal", entry.Name()))
+			if err != nil {
+				return state, err
+			}
+			if err := probe.Validate(); err != nil {
+				return state, err
+			}
+			if probe.TransactionID+".probe" != entry.Name() {
+				return state, ErrSchema
+			}
+			state.Probes = append(state.Probes, probe)
+			if probe.RuntimeBefore == nil {
+				state.ProbeInterrupted = true
+			}
+			continue
 		}
 		j, err := Read[Journal](s.Path("journal", entry.Name()))
 		if err != nil {
