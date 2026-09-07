@@ -18,9 +18,16 @@ RUN curl -fsSL https://github.com/itzg/mc-monitor/releases/download/0.17.1/mc-mo
     && tar -xzf monitor.tar.gz mc-monitor
 
 FROM busybox:1.37.0-musl AS toolbox
+RUN mkdir -p /out && cp /bin/busybox /out/tar
+FROM toolbox AS verify
+COPY --from=tools /downloads/oras /downloads/kubectl /downloads/mc-monitor /usr/local/bin/
+COPY --from=build /out/updater /usr/local/bin/updater
+COPY --from=toolbox /out/tar /usr/local/bin/tar
+RUN command -v updater && command -v oras && command -v kubectl && command -v mc-monitor && command -v tar \
+    && tar --help >/dev/null && oras version && kubectl version --client=true && mc-monitor --help >/dev/null
 FROM scratch
 COPY --from=tools /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-COPY --from=tools /downloads/oras /downloads/kubectl /downloads/mc-monitor /usr/local/bin/
+COPY --from=verify /usr/local/bin/ /usr/local/bin/
 COPY --from=toolbox /bin/busybox /bin/busybox
 COPY --from=build /out/updater /usr/local/bin/updater
 ENV PATH=/usr/local/bin:/bin HOME=/data

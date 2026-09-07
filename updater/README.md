@@ -21,7 +21,7 @@
 - init recovery は `server.properties` CAS の競合防止ロック、全エラー経路の recovery 記録、厳密な recovery chain 検証、gate backup の正式配置契約が未完成。
 - 永続 JSON Schema と infra 固有の journal/current/recovery/metadata canonical fixture。decoder は構造を検査するが、すべての意味制約・列挙値を網羅していない。
 - GC 実行との接続、archive/recovery 関連単位・保持期間による削除、重複 digest の扱い。
-- Docker ビルドと同梱バイナリ実行の検証。busybox は `/bin/busybox` のみで、kubectl cp が必要とする `tar` エントリポイントは未配置。
+- Docker ビルドの実行検証。Dockerfile には `/usr/local/bin/tar` と同梱コマンドの存在・起動確認 stage を追加済み。
 - workflow の実行検証、GHCR 側での immutable policy の保証。現行公開 workflow は直列化と既存タグ拒否のみで、別 publisher との競合を registry 側で防ぐものではない。
 - Deployment/CronJob/Lease/RBAC/NetworkPolicy/kustomization の組み込みはこの部分実装では変更していない。
 - 実 Paper/RCON fixture 採取、実クラスタ障害注入、実クライアントの全ログイン拒否検証は未実施。RCON fixture は依頼に示された Paper 1.21.1 出力例に基づく。
@@ -38,3 +38,11 @@ CGO_ENABLED=0 go build -o bin/updater .
 ```
 
 外部 Go 依存はありません。共有 fixture は `build-server/contract-fixtures/shared` に配置し、LepinoidTools `17a4cf6` の fixture と同一内容です。
+
+## CLOSED 後の runtime whitelist probe
+
+`Engine.ProbeRuntime` は gate の fresh ACTIVE ack と CLOSED を要求し、RCON より前に `journal/<txId>.probe` を永続化します。元が off の場合は `whitelist off` の成功応答まで `runtimeBefore=null` を維持します。応答喪失・復元失敗時は再 probe せず手動介入が必要です。完了した probe は journal の runtime snapshot 永続化まで保持します。
+
+`Store.Inspect` は probe を通常 journal の件数に含めず、未完了を `ProbeInterrupted` で返します。ただし A1 の blocking record 作成への統合は未完了です。probe 部品も `run` には未接続です。
+
+`build-server/contract-fixtures/infra/rcon-whitelist-*.txt` は、依頼者が Paper 1.21.1 vanilla の decompile と `en_us.json` 言語キーで確認した実出力文字列として提供した fixture です。本作業で実サーバーから採取したものではありません。gate 閉鎖は新規 login を拒否しますが、whitelist 有効化による既存プレイヤーの切断リスクを消すものではありません。
