@@ -26,5 +26,11 @@ func run(ctx context.Context) error {
 	if !acquired {
 		return nil
 	}
-	return errors.Join(errTransactionUnavailable, lock.Release(ctx))
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go lock.Heartbeat(ctx, cancel)
+	defer func() {
+		_ = lock.Release(context.Background())
+	}()
+	return runTransaction(ctx, lock)
 }
