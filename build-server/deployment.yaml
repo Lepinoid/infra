@@ -99,7 +99,9 @@ spec:
             - name: TYPE
               value: PAPER
             - name: VERSION
-              value: "1.21.1"
+              value: "1.21.8"
+            - name: PAPER_BUILD
+              value: "60"
             # itzg では MAX_MEMORY だけの指定だと INIT_MEMORY も同値になるため両方を指定する
             - name: INIT_MEMORY
               value: 2G

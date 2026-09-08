@@ -4,6 +4,7 @@ metadata:
   name: plugin-updater
 spec:
   schedule: "*/5 * * * *"
+  suspend: true
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
