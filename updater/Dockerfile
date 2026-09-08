@@ -24,7 +24,7 @@ COPY --from=tools /downloads/oras /downloads/kubectl /downloads/mc-monitor /usr/
 COPY --from=build /out/updater /usr/local/bin/updater
 COPY --from=toolbox /out/tar /usr/local/bin/tar
 RUN command -v updater && command -v oras && command -v kubectl && command -v mc-monitor && command -v tar \
-    && tar --help >/dev/null && oras version && kubectl version --client=true && mc-monitor --help >/dev/null
+    && tar --version && oras version && kubectl version --client=true && mc-monitor version
 FROM scratch
 COPY --from=tools /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=verify /usr/local/bin/ /usr/local/bin/

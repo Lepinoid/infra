@@ -20,7 +20,7 @@ spec:
       securityContext:
         seccompProfile:
           type: RuntimeDefault
-      terminationGracePeriodSeconds: 120
+      terminationGracePeriodSeconds: 180
       initContainers:
         # LepinoidTools AutoCommit プラグイン用の git 認証情報を /data に展開する。
         # itzg イメージは HOME=/data で UID 1000 として起動するため、
@@ -115,6 +115,9 @@ spec:
             # white-list を既定 false に戻すのを防ぐ (updater が white-list= を CAS 管理するため必須)
             - name: OVERRIDE_SERVER_PROPERTIES
               value: "false"
+            # Paper 正常終了 (SIGTERM) の猶予。terminationGracePeriodSeconds より小さく設定
+            - name: STOP_DURATION
+              value: "120"
             # updater/gate プラグインが Pod UID を serverInstanceId として使用する
             - name: POD_UID
               valueFrom:

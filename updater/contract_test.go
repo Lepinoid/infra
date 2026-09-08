@@ -83,3 +83,111 @@ func TestPlayerFixtures(t *testing.T) {
 		}
 	}
 }
+
+func TestInfraCanonicalFixtures(t *testing.T) {
+	cases := []struct {
+		name     string
+		filename string
+		schema   string
+		probe    any
+	}{
+		{"maintenance flag", "maintenance-flag.json", "maintenance-flag.json", &journal.Flag{}},
+		{"journal active", "journal-active.json", "journal.json", &journal.Journal{}},
+		{"current", "current.json", "current.json", &journal.Current{}},
+		{"recovery record", "recovery-record.json", "recovery.json", &journal.Recovery{}},
+		{"runtime whitelist probe", "runtime-whitelist-probe.json", "runtime-whitelist-probe.json", &journal.Probe{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join("../build-server/contract-fixtures/infra", tc.filename))
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoded, err := decodeInto(tc.probe, data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var strict func() error
+			switch v := decoded.(type) {
+			case *journal.Journal:
+				strict = v.Validate
+			case *journal.Current:
+				strict = v.Validate
+			case *journal.Probe:
+				strict = v.Validate
+			case *journal.Flag:
+				strict = func() error { return nil }
+			case *journal.Recovery:
+				strict = func() error { return nil }
+			}
+			if strict == nil {
+				t.Fatalf("unhandled %T", decoded)
+			}
+			if err := strict(); err != nil {
+				t.Fatal(err)
+			}
+			schemaPath := filepath.Join("schemas", tc.schema)
+			schema, err := os.ReadFile(schemaPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var document struct {
+				Required []string `json:"required"`
+			}
+			if err := json.Unmarshal(schema, &document); err != nil {
+				t.Fatal(err)
+			}
+			var fixture map[string]json.RawMessage
+			if err := json.Unmarshal(data, &fixture); err != nil {
+				t.Fatal(err)
+			}
+			for _, key := range document.Required {
+				if _, ok := fixture[key]; !ok {
+					t.Errorf("fixture %s に必須キー %s が無い (schema %s)", tc.filename, key, schemaPath)
+				}
+			}
+		})
+	}
+}
+
+func decodeInto(target any, data []byte) (any, error) {
+	switch typed := target.(type) {
+	case *journal.Flag:
+		v, err := journal.Decode[journal.Flag](bytes.NewReader(data))
+		if err != nil {
+			return nil, err
+		}
+		*typed = v
+		return typed, nil
+	case *journal.Journal:
+		v, err := journal.Decode[journal.Journal](bytes.NewReader(data))
+		if err != nil {
+			return nil, err
+		}
+		*typed = v
+		return typed, nil
+	case *journal.Current:
+		v, err := journal.Decode[journal.Current](bytes.NewReader(data))
+		if err != nil {
+			return nil, err
+		}
+		*typed = v
+		return typed, nil
+	case *journal.Recovery:
+		v, err := journal.Decode[journal.Recovery](bytes.NewReader(data))
+		if err != nil {
+			return nil, err
+		}
+		*typed = v
+		return typed, nil
+	case *journal.Probe:
+		v, err := journal.Decode[journal.Probe](bytes.NewReader(data))
+		if err != nil {
+			return nil, err
+		}
+		*typed = v
+		return typed, nil
+	default:
+		return nil, journal.ErrSchema
+	}
+}
