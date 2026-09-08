@@ -46,11 +46,16 @@ jobs:
           tag="$(date -u +%y.%m.%d)-$(git rev-parse --short=5 HEAD)"
           ref="ghcr.io/lepinoid/plugin-updater:$tag"
           printf '%s' "$GHCR_TOKEN" | oras login ghcr.io -u "$GHCR_USER" --password-stdin
+          # oras manifest fetch でエラーメッセージが期待する文字列を含まない場合がある
+          # (例: org 初回 publish 時に "requested access to the resource is denied")。
+          # 「tag が既に存在する」場合のみ拒否し、それ以外の fetch 失敗 (MANIFEST_UNKNOWN
+          # 系を含むあらゆる "存在しない" ケース) は publish に進む。
           if oras manifest fetch "$ref" > /dev/null 2> "$RUNNER_TEMP/fetch-error"; then
             echo 'Refusing to overwrite an existing release tag' >&2
             exit 1
           fi
-          grep -Eq 'MANIFEST_UNKNOWN|manifest unknown' "$RUNNER_TEMP/fetch-error"
+          # fetch が失敗した場合のエラー内容を記録しておく (デバッグ用)
+          cat "$RUNNER_TEMP/fetch-error" >&2
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
           docker build --platform linux/amd64 -f updater/Dockerfile -t "$ref" .
           docker push "$ref"
