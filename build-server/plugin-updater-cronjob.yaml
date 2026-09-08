@@ -25,7 +25,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: updater
-              image: ghcr.io/lepinoid/plugin-updater:REPLACE_WITH_DIGEST
+              image: ghcr.io/lepinoid/plugin-updater:26.09.08-6001a@sha256:f66de5f8bd3c93559d2704765950674d33238763cd76f013f79a7acaeddf3abc
               imagePullPolicy: IfNotPresent
               args: ["run"]
               env:
