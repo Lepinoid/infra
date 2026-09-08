@@ -1,0 +1,31 @@
+name: Shell script tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'ci/**'
+      - '.github/workflows/shell-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ci/**'
+
+permissions: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - name: Syntax check (bash -n)
+        run: bash -n ci/*.sh ci/lib/*.sh ci/lib/*_test.sh
+      - name: Run unit tests
+        run: |
+          set -euo pipefail
+          for t in ci/lib/*_test.sh; do
+            echo "=== $t ==="
+            bash "$t"
+          done
