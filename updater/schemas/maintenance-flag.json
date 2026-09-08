@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "maintenance.flag",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "transactionId", "createdAt", "journalPath", "fencingGeneration"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "transactionId": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "createdAt": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "journalPath": {"type": "string", "pattern": "^journal/[0-9a-f-]{36}$"},
+    "fencingGeneration": {"type": "integer", "minimum": 0}
+  }
+}

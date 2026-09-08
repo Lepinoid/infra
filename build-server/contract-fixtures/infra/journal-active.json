@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "transactionId": "550e8400-e29b-41d4-a716-446655440000",
+  "phase": "MAINTENANCE_ACTIVE",
+  "lifecycleState": "ACTIVE",
+  "outcome": null,
+  "resolution": null,
+  "maintenanceRequired": true,
+  "accessState": "CLOSED",
+  "commitCandidate": "TARGET",
+  "suspendReason": null,
+  "failureReason": null,
+  "fencingGeneration": 3,
+  "expectedPodUid": "b3e6d1f0-1a2b-4c5d-9e8f-001122334455",
+  "targetManifest": {
+    "schemaVersion": 1,
+    "version": "2026.09.07-1.21.1-17a4c",
+    "ociRepository": "ghcr.io/lepinoid/lepinoid-tools",
+    "digest": "sha256:aa46298994e341473f6bf3187955ca29a6ff903c35b5ef411877cce91c0ae92f",
+    "pluginCommitSha": "17a4cf6a32d2f714e6456e4714a27358c9b0ba35",
+    "lepinoidToolsSha256": "b20e389706bafd0778807650b83043a070362781d51c7ff800ceba61a61a8340",
+    "multiverseSha256": "90a39133f36240b28739b7c100492371702f8ad1d7f7621b028f8d2af49fe1c3",
+    "multiverseVersion": "5.7.1",
+    "supportedMinecraft": ["1.21.1"],
+    "configMapResourceVersion": "12345"
+  },
+  "sourceDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "targetDigest": "sha256:aa46298994e341473f6bf3187955ca29a6ff903c35b5ef411877cce91c0ae92f",
+  "source": {
+    "lepinoidTools": {"name": "LepinoidTools.jar", "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
+    "multiverseCore": {"name": "Multiverse-Core.jar", "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}
+  },
+  "target": {
+    "lepinoidTools": {"name": "LepinoidTools.jar", "sha256": "b20e389706bafd0778807650b83043a070362781d51c7ff800ceba61a61a8340"},
+    "multiverseCore": {"name": "Multiverse-Core.jar", "sha256": "90a39133f36240b28739b7c100492371702f8ad1d7f7621b028f8d2af49fe1c3"}
+  },
+  "stagingPath": "staging/sha256:aa46298994e341473f6bf3187955ca29a6ff903c35b5ef411877cce91c0ae92f",
+  "backupPath": "backup/sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "restartRequestedAt": null,
+  "expectedPodTemplateGeneration": null,
+  "replacementPodUid": null,
+  "previousPodUid": null,
+  "maintenance": {
+    "whitelistJsonBackupBase64": null,
+    "whitelistJsonChecksum": null,
+    "whitelistJsonExisted": null,
+    "whitelistEntriesSha256": null,
+    "runtimeWhitelistEnabled": null,
+    "persistedWhitelistEnabled": true,
+    "startedAt": "2026-09-07T00:00:00Z"
+  }
+}

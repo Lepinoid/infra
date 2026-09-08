@@ -14,11 +14,13 @@ spec:
       labels:
         app: build-server
     spec:
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       # atm10 と同様のポッドレベル seccomp 設定（fsGroup は itzg イメージが権限を処理するため不要）
       securityContext:
         seccompProfile:
           type: RuntimeDefault
-      terminationGracePeriodSeconds: 120
+      terminationGracePeriodSeconds: 180
       initContainers:
         # LepinoidTools AutoCommit プラグイン用の git 認証情報を /data に展開する。
         # itzg イメージは HOME=/data で UID 1000 として起動するため、
@@ -67,6 +69,26 @@ spec:
             limits:
               cpu: 10m
               memory: 32Mi
+        # updater init recovery: maintenance 中断・jar 破損からの自動回復を minecraft 起動前に実施
+        - name: plugin-updater-init
+          image: ghcr.io/lepinoid/plugin-updater:REPLACE_WITH_DIGEST
+          imagePullPolicy: IfNotPresent
+          args: ["init-recover"]
+          env:
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 5m
+              memory: 32Mi
+            limits:
+              cpu: 50m
+              memory: 64Mi
       containers:
         - name: minecraft
           image: itzg/minecraft-server:latest
@@ -89,6 +111,18 @@ spec:
               value: "true"
             - name: SERVER_PORT
               value: "25565"
+            # itzg 起動スクリプトが毎起動で server.properties を再生成し
+            # white-list を既定 false に戻すのを防ぐ (updater が white-list= を CAS 管理するため必須)
+            - name: OVERRIDE_SERVER_PROPERTIES
+              value: "false"
+            # Paper 正常終了 (SIGTERM) の猶予。terminationGracePeriodSeconds より小さく設定
+            - name: STOP_DURATION
+              value: "120"
+            # updater/gate プラグインが Pod UID を serverInstanceId として使用する
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
           ports:
             - name: minecraft
               containerPort: 25565
@@ -114,6 +148,27 @@ spec:
             limits:
               cpu: 6
               memory: 14Gi
+        # updater sidecar: kubectl cp 用 tar + updater CLI (CronJob 経由で run を実行)
+        - name: updater
+          image: ghcr.io/lepinoid/plugin-updater:REPLACE_WITH_DIGEST
+          imagePullPolicy: IfNotPresent
+          args: ["sleep", "infinity"]
+          command: ["/bin/busybox"]
+          env:
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 5m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
       # longhorn-gameserver は strict-local のため mainworker-1 へのピン留めが必須
       nodeSelector:
         kubernetes.io/hostname: mainworker-1

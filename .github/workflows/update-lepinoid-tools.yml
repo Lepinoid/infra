@@ -1,0 +1,55 @@
+name: Update LepinoidTools desired bundle
+on:
+  repository_dispatch:
+    types: [lepinoid-tools-update]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Bundle version or sha256 digest (manual rollback)
+        required: true
+        type: string
+concurrency:
+  group: lepinoid-tools-update
+  cancel-in-progress: false
+permissions: {}
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Install verified ORAS
+        run: |
+          set -euo pipefail
+          curl -fsSL https://github.com/oras-project/oras/releases/download/v1.3.4/oras_1.3.4_linux_amd64.tar.gz -o "$RUNNER_TEMP/oras.tar.gz"
+          echo "f27adb935022d94df8dc77719c322dda592c78a0d57a6f7dcdd8d900b248c454  $RUNNER_TEMP/oras.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/oras.tar.gz" -C /usr/local/bin oras
+      - name: Resolve and validate complete artifact metadata
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: ci/resolve-plugin-bundle.sh
+      - name: Revalidate source HEAD and commit desired state
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == repository_dispatch ]]; then
+            head=$(gh api repos/Lepinoid/LepinoidTools/branches/main --jq .commit.sha)
+            [[ "$head" =~ ^[0-9a-f]{40}$ ]]
+            test "$head" = "$(jq -er .pluginCommitSha "$RUNNER_TEMP/desired.json")"
+          fi
+          jq -n --slurpfile desired "$RUNNER_TEMP/desired.json" '{apiVersion:"v1",kind:"ConfigMap",metadata:{name:"plugin-versions"},data:{"desired.json":($desired[0]|tojson)}}' > build-server/plugin-versions.yaml
+          git add build-server/plugin-versions.yaml
+          if git diff --cached --quiet; then exit 0; fi
+          version=$(jq -er .version "$RUNNER_TEMP/desired.json")
+          git -c user.name='github-actions[bot]' -c user.email='github-actions[bot]@users.noreply.github.com' commit -m "chore(build-server): update LepinoidTools to $version"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 -w0)" push "https://github.com/$REPOSITORY.git" HEAD:main

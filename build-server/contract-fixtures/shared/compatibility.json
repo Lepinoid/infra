@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "lepinoidTools": {
+    "file": "LepinoidTools.jar",
+    "version": "2026.09.06-1.21.1-a1b2c",
+    "commitSha": "0123456789abcdef0123456789abcdef01234567",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "multiverseCore": {
+    "file": "Multiverse-Core.jar",
+    "version": "5.7.1",
+    "sha256": "90a39133f36240b28739b7c100492371702f8ad1d7f7621b028f8d2af49fe1c3"
+  },
+  "supportedMinecraft": ["1.21.1"]
+}

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "serverInstanceId": "d290f1ee-6c54-4b01-90e6-d701748f0851",
+  "processStartedAt": "2026-09-06T03:00:00Z",
+  "statusSequence": 7,
+  "phase": "HEALTHY",
+  "pluginVersion": "2026.09.06-1.21.1-a1b2c",
+  "pluginCommitSha": "0123456789abcdef0123456789abcdef01234567",
+  "serverMinecraftVersion": "1.21.1",
+  "multiverse": { "detected": "5.7.1", "expected": "5.7.1", "compatible": true },
+  "autoCommit": {
+    "operationId": "550e8400-e29b-41d4-a716-446655440000",
+    "trigger": "UPDATER_CHECKPOINT",
+    "state": "idle",
+    "result": "succeeded",
+    "startedAt": "2026-09-06T03:10:00Z",
+    "completedAt": "2026-09-06T03:10:12Z",
+    "pushedCommitSha": "abcdef0123456789abcdef0123456789abcdef01"
+  },
+  "updatedAt": "2026-09-06T03:10:12Z"
+}

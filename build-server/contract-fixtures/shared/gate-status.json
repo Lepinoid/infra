@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "version": "2026.09.06-a1b2c",
+  "serverInstanceId": "d290f1ee-6c54-4b01-90e6-d701748f0851",
+  "phase": "ACTIVE",
+  "observedFlagTransactionId": "3b8f8f3f-7f5b-4b1c-9f7d-2f8e6f5a4b3c",
+  "observedFlagGeneration": 3,
+  "lastReleasedTransactionId": "9c4d2a1e-0a0a-4a4a-9a9a-1b2b3c4d5e6f",
+  "lastReleasedFlagGeneration": 1,
+  "updatedAt": "2026-09-06T03:12:00Z"
+}

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "version": "2026.09.07-1.21.1-17a4c",
+  "ociRepository": "ghcr.io/lepinoid/lepinoid-tools",
+  "digest": "sha256:aa46298994e341473f6bf3187955ca29a6ff903c35b5ef411877cce91c0ae92f",
+  "pluginCommitSha": "17a4cf6a32d2f714e6456e4714a27358c9b0ba35",
+  "lepinoidToolsSha256": "b20e389706bafd0778807650b83043a070362781d51c7ff800ceba61a61a8340",
+  "multiverseSha256": "90a39133f36240b28739b7c100492371702f8ad1d7f7621b028f8d2af49fe1c3",
+  "multiverseVersion": "5.7.1",
+  "supportedMinecraft": ["1.21.1"],
+  "configMapResourceVersion": "12345",
+  "installedAt": "2026-09-07T00:00:00Z"
+}

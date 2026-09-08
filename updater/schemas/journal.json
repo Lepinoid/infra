@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "journal",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "transactionId", "phase", "lifecycleState", "outcome", "resolution", "maintenanceRequired", "accessState", "commitCandidate", "suspendReason", "failureReason", "fencingGeneration", "expectedPodUid", "targetManifest", "sourceDigest", "targetDigest", "source", "target", "stagingPath", "backupPath", "restartRequestedAt", "expectedPodTemplateGeneration", "replacementPodUid", "previousPodUid", "maintenance"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "transactionId": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "phase": {"type": "string"},
+    "lifecycleState": {"enum": ["ACTIVE", "SUSPENDED", "TERMINAL"]},
+    "outcome": {"type": ["string", "null"], "enum": ["SUCCEEDED", "ROLLED_BACK", "ABORTED_NO_CHANGE", "ABORTED", "FAILED_MANUAL_INTERVENTION", null]},
+    "resolution": {"type": ["string", "null"]},
+    "maintenanceRequired": {"type": "boolean"},
+    "accessState": {"enum": ["OPEN", "CLOSING", "CLOSED", "OPENING"]},
+    "commitCandidate": {"enum": ["SOURCE", "TARGET", null]},
+    "suspendReason": {"type": ["string", "null"]},
+    "failureReason": {"type": ["string", "null"]},
+    "fencingGeneration": {"type": "integer", "minimum": 0},
+    "expectedPodUid": {"type": "string"},
+    "targetManifest": {"$ref": "#/$defs/manifest"},
+    "sourceDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "targetDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "source": {"$ref": "#/$defs/pair"},
+    "target": {"$ref": "#/$defs/pair"},
+    "stagingPath": {"type": "string"},
+    "backupPath": {"type": "string"},
+    "restartRequestedAt": {"type": ["string", "null"], "format": "date-time"},
+    "expectedPodTemplateGeneration": {"type": ["integer", "null"]},
+    "replacementPodUid": {"type": ["string", "null"]},
+    "previousPodUid": {"type": ["string", "null"]},
+    "maintenance": {"$ref": "#/$defs/maintenance"}
+  },
+  "$defs": {
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "version", "ociRepository", "digest", "pluginCommitSha", "lepinoidToolsSha256", "multiverseSha256", "multiverseVersion", "supportedMinecraft", "configMapResourceVersion"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "version": {"type": "string"},
+        "ociRepository": {"const": "ghcr.io/lepinoid/lepinoid-tools"},
+        "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "pluginCommitSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "lepinoidToolsSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "multiverseSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "multiverseVersion": {"type": "string"},
+        "supportedMinecraft": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "configMapResourceVersion": {"type": "string"}
+      }
+    },
+    "pair": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lepinoidTools", "multiverseCore"],
+      "properties": {
+        "lepinoidTools": {"$ref": "#/$defs/jar"},
+        "multiverseCore": {"$ref": "#/$defs/jar"}
+      }
+    },
+    "jar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "sha256"],
+      "properties": {
+        "name": {"type": "string"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "maintenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["whitelistJsonBackupBase64", "whitelistJsonChecksum", "whitelistJsonExisted", "whitelistEntriesSha256", "runtimeWhitelistEnabled", "persistedWhitelistEnabled", "startedAt"],
+      "properties": {
+        "whitelistJsonBackupBase64": {"type": ["string", "null"]},
+        "whitelistJsonChecksum": {"type": ["string", "null"]},
+        "whitelistJsonExisted": {"type": ["boolean", "null"]},
+        "whitelistEntriesSha256": {"type": ["string", "null"]},
+        "runtimeWhitelistEnabled": {"type": ["boolean", "null"]},
+        "persistedWhitelistEnabled": {"type": ["boolean", "null"]},
+        "startedAt": {"type": ["string", "null"], "format": "date-time"}
+      }
+    }
+  }
+}

@@ -1,0 +1,61 @@
+name: Publish plugin updater
+on:
+  workflow_dispatch:
+  push:
+    tags: ['plugin-updater-*']
+permissions: {}
+concurrency:
+  group: plugin-updater-image
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.publish.outputs.digest }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5
+        with:
+          go-version: '1.25.x'
+          cache: false
+      - name: Test static management binary
+        working-directory: updater
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l .)"
+          go test -race -shuffle=on -count=1 ./...
+          go vet ./...
+      - name: Install verified ORAS
+        run: |
+          set -euo pipefail
+          curl -fsSL https://github.com/oras-project/oras/releases/download/v1.3.4/oras_1.3.4_linux_amd64.tar.gz -o "$RUNNER_TEMP/oras.tar.gz"
+          echo "f27adb935022d94df8dc77719c322dda592c78a0d57a6f7dcdd8d900b248c454  $RUNNER_TEMP/oras.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/oras.tar.gz" -C /usr/local/bin oras
+      - name: Publish an unused immutable tag
+        id: publish
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          tag="$(date -u +%y.%m.%d)-$(git rev-parse --short=5 HEAD)"
+          ref="ghcr.io/lepinoid/plugin-updater:$tag"
+          printf '%s' "$GHCR_TOKEN" | oras login ghcr.io -u "$GHCR_USER" --password-stdin
+          if oras manifest fetch "$ref" > /dev/null 2> "$RUNNER_TEMP/fetch-error"; then
+            echo 'Refusing to overwrite an existing release tag' >&2
+            exit 1
+          fi
+          grep -Eq 'MANIFEST_UNKNOWN|manifest unknown' "$RUNNER_TEMP/fetch-error"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+          docker build --platform linux/amd64 -f updater/Dockerfile -t "$ref" .
+          docker push "$ref"
+          digest=$(oras resolve "$ref")
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "Published: $ref@$digest"
+          echo 'Do not update Deployment automatically. Verify there is no active journal, then update sidecar/initContainer/CronJob digest pins in a separate maintenance PR.'

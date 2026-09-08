@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "staging/backup metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "digest", "lepinoidTools", "multiverseCore", "stagedAt", "backedUpAt"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "stagedAt": {"type": ["string", "null"], "format": "date-time"},
+    "backedUpAt": {"type": ["string", "null"], "format": "date-time"},
+    "lepinoidTools": {"$ref": "#/$defs/jar"},
+    "multiverseCore": {"$ref": "#/$defs/jar"}
+  },
+  "$defs": {
+    "jar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "sha256"],
+      "properties": {
+        "name": {"type": "string"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    }
+  }
+}

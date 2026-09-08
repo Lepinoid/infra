@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "recovery record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "transactionId", "generation", "podUid", "observedPhase", "jarChecksumsBefore", "jarChecksumsAfter", "persistedWhitelistBefore", "persistedWhitelistAfter", "flagBefore", "flagAfter", "fencingGenerationBefore", "fencingGenerationAfter", "result", "consumedByJobUid", "timestamp"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "transactionId": {"type": ["string", "null"], "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "generation": {"type": "integer", "minimum": 0},
+    "podUid": {"type": ["string", "null"]},
+    "observedPhase": {"type": ["string", "null"]},
+    "jarChecksumsBefore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lepinoidTools", "multiverseCore"],
+      "properties": {
+        "lepinoidTools": {"type": ["string", "null"]},
+        "multiverseCore": {"type": ["string", "null"]}
+      }
+    },
+    "jarChecksumsAfter": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "lepinoidTools": {"type": ["string", "null"]},
+        "multiverseCore": {"type": ["string", "null"]}
+      }
+    },
+    "persistedWhitelistBefore": {"type": "boolean"},
+    "persistedWhitelistAfter": {"type": "boolean"},
+    "flagBefore": {"type": "boolean"},
+    "flagAfter": {"type": "boolean"},
+    "fencingGenerationBefore": {"type": "integer", "minimum": 0},
+    "fencingGenerationAfter": {"type": "integer", "minimum": 0},
+    "result": {"type": "string"},
+    "consumedByJobUid": {"type": ["string", "null"]},
+    "timestamp": {"type": "string", "format": "date-time", "pattern": "Z$"}
+  }
+}
