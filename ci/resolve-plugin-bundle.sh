@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 export LC_ALL=C
+source ci/lib/bundle-version.sh
 repository=ghcr.io/lepinoid/lepinoid-tools
 if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
   version=$INPUT_VERSION
@@ -10,7 +11,7 @@ fi
 if [[ "$version" =~ ^sha256:[0-9a-f]{64}$ ]]; then
   ref="$repository@$version"
 else
-  [[ "$version" =~ ^[0-9]{4}\.[0-9]{2}\.[0-9]{2}-1\.21\.1-[0-9a-f]{5}$ ]]
+  bundle_version_matches "$version"
   ref="$repository:$version"
 fi
 printf '%s' "$GH_TOKEN" | oras login ghcr.io -u "$GHCR_USER" --password-stdin
@@ -31,13 +32,13 @@ tar -tvf "${files[0]}" > "$RUNNER_TEMP/verbose-members"
 if grep -v '^-rw-' "$RUNNER_TEMP/verbose-members"; then exit 1; fi
 tar --no-same-owner --no-same-permissions -xf "${files[0]}" -C "$RUNNER_TEMP/bundle-extract"
 metadata="$RUNNER_TEMP/bundle-extract/compatibility.json"
-jq -e '
+jq -e --arg re "$BUNDLE_VERSION_RE" '
   (keys|sort) == (["schemaVersion","lepinoidTools","multiverseCore","supportedMinecraft"]|sort) and
   .schemaVersion == 1 and
   (.lepinoidTools|keys|sort) == (["file","version","commitSha","sha256"]|sort) and
   (.multiverseCore|keys|sort) == (["file","version","sha256"]|sort) and
   .lepinoidTools.file == "LepinoidTools.jar" and .multiverseCore.file == "Multiverse-Core.jar" and
-  (.lepinoidTools.version|test("^[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}-1\\.21\\.1-[0-9a-f]{5}$")) and
+  (.lepinoidTools.version|test($re)) and
   (.lepinoidTools.commitSha|test("^[0-9a-f]{40}$")) and
   (.lepinoidTools.sha256|test("^[0-9a-f]{64}$")) and
   (.multiverseCore.sha256|test("^[0-9a-f]{64}$")) and
