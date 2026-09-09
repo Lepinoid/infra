@@ -63,6 +63,47 @@ plugin-updater Pod の egress は CiliumNetworkPolicy `plugin-updater-egress` �
 2. **その他のプラグインの更新** → PVC `/data/plugins` 上で jar を入れ替える（専用保守）。`build-server/plugins-staging/<YYYYMMDD>/` に新しい jar をステージして入れ替える
 3. **Paper / Minecraft のバージョン更新** → `deployment.yaml` の `VERSION` / `PAPER_BUILD` を変更して rollout restart
 
+## rescue（障害時の診断・修復 Pod）
+
+`build-server-data` PVC は RWO のため、rescue Pod を起動する前に build-server を必ず 0 replicas へ scale し、同時書き込みによる破損を避ける。rescue が稼働している間は updater CronJob を suspend のまま維持する。
+
+1. updater CronJob を停止し、既に実行中の updater がないことを確認する。
+
+   ```sh
+   set -euo pipefail
+   ORIGINAL_SUSPEND=$(kubectl get cronjob/plugin-updater -n lepinoid -o jsonpath='{.spec.suspend}')
+   ORIGINAL_SUSPEND=${ORIGINAL_SUSPEND:-false}
+   kubectl patch cronjob/plugin-updater -n lepinoid --type=merge -p '{"spec":{"suspend":true}}'
+   updater_pods=$(kubectl get pod -n lepinoid -l app=plugin-updater-job --field-selector=status.phase!=Succeeded,status.phase!=Failed --no-headers)
+   test -z "$updater_pods"
+   ```
+
+2. build-server を停止し、Pod が完全に消滅したことを確認する。
+
+   ```sh
+   set -euo pipefail
+   kubectl -n lepinoid scale deploy/build-server --replicas=0
+   build_server_pods=$(kubectl get pod -n lepinoid -l app=build-server --field-selector=status.phase!=Succeeded,status.phase!=Failed --no-headers)
+   test -z "$build_server_pods"
+   ```
+
+3. Flux 管理外の rescue Pod を手動で作成し、PVC を診断・修復する。
+
+   ```sh
+   set -euo pipefail
+   kubectl apply -f build-server/rescue-pod.yaml
+   kubectl exec -it build-server-rescue -n lepinoid -- /bin/busybox sh
+   ```
+
+4. 修復後は rescue Pod を削除して build-server と CronJob を元に戻す。
+
+   ```sh
+   set -euo pipefail
+   kubectl delete pod build-server-rescue -n lepinoid
+   kubectl -n lepinoid scale deploy/build-server --replicas=1
+   kubectl patch cronjob/plugin-updater -n lepinoid --type=merge -p "{\"spec\":{\"suspend\":$ORIGINAL_SUSPEND}}"
+   ```
+
 ## ブートストラップ記録（1.21.8 バンプ時）
 
 初回起動時の設定値:
