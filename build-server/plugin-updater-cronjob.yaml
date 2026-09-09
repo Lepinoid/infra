@@ -37,13 +37,13 @@ spec:
               image: ghcr.io/lepinoid/plugin-updater:26.09.08-6001a@sha256:f66de5f8bd3c93559d2704765950674d33238763cd76f013f79a7acaeddf3abc
               imagePullPolicy: IfNotPresent
               args: ["run"]
-              # updater バイナリが kubectl を呼ぶ際に、in-cluster 環境では
-              # HOME ベースの kubeconfig（/data/.kube/config）を優先しようとする。
-              # KUBECONFIG を空文字で設定することで、kubectl が標準の ServiceAccount
-              # トークン（/var/run/secrets/kubernetes.io/serviceaccount）を使うようにする。
+              # updater は KUBECONFIG 環境変数を参照しないため、 kubectl が in-cluster の
+              # ServiceAccount トークンを使うようにするには、 KUBECONFIG を明示的に空にする
+              # 必要がある。 value: "" は Kubernetes API が無視することがあるため、 空の
+              # 文字列リテラルとして指定する。
               env:
                 - name: KUBECONFIG
-                  value: ""
+                  value: ''
                 - name: JOB_UID
                   valueFrom:
                     fieldRef:
