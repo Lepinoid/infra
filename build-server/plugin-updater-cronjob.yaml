@@ -34,7 +34,7 @@ spec:
                 claimName: build-server-data
           containers:
             - name: updater
-              image: ghcr.io/lepinoid/plugin-updater:26.09.09-83123@sha256:8d7be36d400587e1e43c074fa363955c0b0cf594a4e80a00c544c7bca1d46b6f
+              image: ghcr.io/lepinoid/plugin-updater:26.09.09-95aba@sha256:545c452f1410f764a980f334673a9d908d87b80cfc59131e541c6c140a22ff2d
               imagePullPolicy: IfNotPresent
               args: ["run"]
               env:
