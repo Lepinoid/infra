@@ -6,11 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/lepinoid/infra/updater/internal/lease"
 )
+
+var serviceAccountDir = "/var/run/secrets/kubernetes.io/serviceaccount"
 
 type Commands struct{ Timeout time.Duration }
 
@@ -32,8 +36,37 @@ func (c Commands) Run(ctx context.Context, input []byte, name string, args ...st
 	return out, nil
 }
 
+// kubectl CLI は client-go と異なり in-cluster 自動検出を行わない。
+// kubeconfig 不在の Pod 内では localhost:8080 へフォールバックするため、
+// ServiceAccount の token/ca.crt をフラグで明示する。
+func kubectlBaseArgs() ([]string, error) {
+	token, err := os.ReadFile(serviceAccountDir + "/token")
+	if err != nil {
+		return nil, fmt.Errorf("read service account token: %w", err)
+	}
+	server := "https://kubernetes.default.svc"
+	if host := os.Getenv("KUBERNETES_SERVICE_HOST"); host != "" {
+		port := os.Getenv("KUBERNETES_SERVICE_PORT")
+		if port == "" {
+			port = "443"
+		}
+		server = "https://" + host + ":" + port
+	}
+	return []string{
+		"--server=" + server,
+		"--token=" + strings.TrimSpace(string(token)),
+		"--certificate-authority=" + serviceAccountDir + "/ca.crt",
+		"--namespace=lepinoid",
+		"--request-timeout=15s",
+	}, nil
+}
+
 func (c Commands) Kubectl(ctx context.Context, input []byte, args ...string) ([]byte, error) {
-	return c.Run(ctx, input, "kubectl", append([]string{"--namespace=lepinoid", "--request-timeout=15s"}, args...)...)
+	base, err := kubectlBaseArgs()
+	if err != nil {
+		return nil, err
+	}
+	return c.Run(ctx, input, "kubectl", append(base, args...)...)
 }
 
 type LeaseAPI struct{ Commands Commands }
