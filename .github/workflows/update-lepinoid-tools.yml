@@ -31,13 +31,13 @@ jobs:
           tar -xzf "$RUNNER_TEMP/oras.tar.gz" -C /usr/local/bin oras
       - name: Resolve and validate complete artifact metadata
         env:
-          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           GHCR_USER: ${{ github.actor }}
           INPUT_VERSION: ${{ inputs.version }}
         run: ci/resolve-plugin-bundle.sh
       - name: Revalidate source HEAD and commit desired state
         env:
-          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
         run: |
