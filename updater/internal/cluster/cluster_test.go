@@ -71,13 +71,13 @@ func TestKubectlBaseArgs(t *testing.T) {
 }
 
 func TestLeaseWireRenewedAtFormat(t *testing.T) {
-	// Kubernetes の MicroTime は RFC3339Nano（ナノ秒9桁）を受理しないため、
-	// RFC3339（秒精度）にフォーマットされることを検証する回帰テスト。
+	// Kubernetes の MicroTime は RFC3339Nano（ナノ秒9桁）も RFC3339（秒精度）も
+	// 拒否し、小数点ちょうど6桁のマイクロ秒を要求することを検証する回帰テスト。
 	renewedAt := time.Date(2026, 9, 9, 2, 21, 52, 123456789, time.UTC)
 
 	var wire leaseWire
 	wire.Spec.Holder = "test-holder"
-	wire.Spec.RenewedAt = renewedAt.UTC().Format(time.RFC3339)
+	wire.Spec.RenewedAt = renewedAt.UTC().Format("2006-01-02T15:04:05.000000Z07:00")
 	wire.Spec.Duration = 60
 
 	data, err := json.Marshal(wire)
@@ -85,7 +85,6 @@ func TestLeaseWireRenewedAtFormat(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// エクスポートした JSON の renewTime を検証
 	var got struct {
 		Spec struct {
 			RenewedAt string `json:"renewTime"`
@@ -95,18 +94,16 @@ func TestLeaseWireRenewedAtFormat(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// RFC3339（秒精度、ナノ秒なし）で出力されていること
-	const want = "2026-09-09T02:21:52Z"
+	const want = "2026-09-09T02:21:52.123456Z"
 	if got.Spec.RenewedAt != want {
 		t.Errorf("renewTime = %q, want %q", got.Spec.RenewedAt, want)
 	}
 
-	// kube API のパース（秒精度・小数点なし）で読み取れること
-	parsed, err := time.Parse("2006-01-02T15:04:05Z07:00", got.Spec.RenewedAt)
+	parsed, err := time.Parse("2006-01-02T15:04:05.000000Z07:00", got.Spec.RenewedAt)
 	if err != nil {
 		t.Fatalf("kube API パース不可: %v", err)
 	}
-	if !parsed.Equal(renewedAt.Truncate(time.Second)) {
-		t.Errorf("パース後の時刻が一致しない: got %v, want %v", parsed, renewedAt.Truncate(time.Second))
+	if !parsed.Equal(renewedAt.Truncate(time.Microsecond)) {
+		t.Errorf("パース後の時刻が一致しない: got %v, want %v", parsed, renewedAt.Truncate(time.Microsecond))
 	}
 }

@@ -109,9 +109,10 @@ func (a LeaseAPI) Update(ctx context.Context, r lease.Record) (lease.Record, err
 	wire.Metadata.Name = "plugin-updater"
 	wire.Metadata.ResourceVersion = r.ResourceVersion
 	wire.Spec.Holder = r.Holder
-	// Kubernetes の MicroTime はナノ秒9桁の RFC3339Nano を受理しない
-	// ("2006-01-02T15:04:05.000000Z07:00" としてパースされる) ため秒精度に丸める。
-	wire.Spec.RenewedAt = r.RenewedAt.UTC().Format(time.RFC3339)
+	// Kubernetes の coordination.k8s.io Lease (MicroTime) は小数点ちょうど6桁の
+	// マイクロ秒 ("2006-01-02T15:04:05.000000Z07:00") を要求する。RFC3339Nano
+	// (ナノ秒9桁) も RFC3339 (秒精度) も拒否されるため固定6桁にフォーマットする。
+	wire.Spec.RenewedAt = r.RenewedAt.UTC().Format("2006-01-02T15:04:05.000000Z07:00")
 	wire.Spec.Duration = r.Duration
 	data, err := json.Marshal(wire)
 	if err != nil {
