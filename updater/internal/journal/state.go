@@ -8,7 +8,7 @@ import (
 
 var Phases = []string{"PREPARING", "DRIFT_DETECTED", "STAGED", "MAINTENANCE_PREPARED", "MAINTENANCE_ACTIVE", "BACKUP_STARTED", "BACKUP_COMPLETE", "INSTALL_STARTED", "INSTALL_COMPLETE", "RESTART_REQUESTED", "VERIFYING", "ACCESS_RESTORE_STARTED", "ACCESS_RESTORE_COMPLETE", "ROLLBACK_INSTALL_STARTED", "ROLLBACK_INSTALL_COMPLETE", "ROLLBACK_RESTART_REQUESTED"}
 var failures = []string{"gate-ack-unrecoverable", "pod-or-pvc-unavailable", "init-unrecoverable", "invariant-violation", "whitelist-restore-failed", "persisted-whitelist-cas-conflict"}
-var suspensions = []string{"player-count-unknown", "checkpoint-timeout", "checkpoint-failed", "checkpoint-busy", "checkpoint-unavailable", "checkpoint-invalid-response", "player-count-unknown-after-restore", "gate-ack-timeout", "sidecar-unavailable", "api-unavailable"}
+var suspensions = []string{"player-count-unknown", "checkpoint-timeout", "checkpoint-failed", "checkpoint-busy", "checkpoint-unavailable", "checkpoint-invalid-response", "player-count-unknown-after-restore", "gate-ack-timeout", "sidecar-unavailable", "api-unavailable", "mc-version-mismatch", "mc-version-unknown"}
 var hashPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 var commitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)

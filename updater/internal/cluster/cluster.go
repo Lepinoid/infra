@@ -18,6 +18,14 @@ var serviceAccountDir = "/var/run/secrets/kubernetes.io/serviceaccount"
 
 type Commands struct{ Timeout time.Duration }
 
+type Runner interface {
+	Run(ctx context.Context, input []byte, name string, args ...string) ([]byte, error)
+	Kubectl(ctx context.Context, input []byte, args ...string) ([]byte, error)
+	Exec(ctx context.Context, pod Pod, container string, args ...string) ([]byte, error)
+}
+
+var _ Runner = Commands{}
+
 func (c Commands) Run(ctx context.Context, input []byte, name string, args ...string) ([]byte, error) {
 	timeout := c.Timeout
 	if timeout <= 0 {

@@ -14,7 +14,7 @@
     "maintenanceRequired": {"type": "boolean"},
     "accessState": {"enum": ["OPEN", "CLOSING", "CLOSED", "OPENING"]},
     "commitCandidate": {"enum": ["SOURCE", "TARGET", null]},
-    "suspendReason": {"type": ["string", "null"]},
+    "suspendReason": {"type": ["string", "null"], "enum": [null, "player-count-unknown", "checkpoint-timeout", "checkpoint-failed", "checkpoint-busy", "checkpoint-unavailable", "checkpoint-invalid-response", "player-count-unknown-after-restore", "gate-ack-timeout", "sidecar-unavailable", "api-unavailable", "mc-version-mismatch", "mc-version-unknown"]},
     "failureReason": {"type": ["string", "null"]},
     "fencingGeneration": {"type": "integer", "minimum": 0},
     "expectedPodUid": {"type": "string"},
