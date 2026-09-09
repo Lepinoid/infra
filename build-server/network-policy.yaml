@@ -36,6 +36,9 @@ spec:
 ---
 # plugin-updater CronJob からの Egress 許可（CiliumNetworkPolicy）
 # 許可するのは kube-apiserver / GHCR / kube-dns の 3 系統のみ
+# apiserver ルールの toPorts: Cilium は egress ポリシーを DNAT 後の宛先で評価するため、
+# kubernetes Service (10.96.0.1:443) 経由の接続は実 endpoint (192.168.10.110:6443) の
+# ポートになる。443 だけではマッチせず拒否されるため 6443 も許可する（PR #20 後の実測で確認）。
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -50,6 +53,8 @@ spec:
       toPorts:
         - ports:
             - port: "443"
+              protocol: TCP
+            - port: "6443"
               protocol: TCP
     - toFQDNs:
         - matchName: ghcr.io
