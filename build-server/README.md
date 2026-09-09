@@ -31,7 +31,9 @@ Lepinoid ビルドサーバー（PaperMC 1.21.8 + Build 60）を LXC から Kube
 
 ### OCI 管理（自動更新基盤で扱うもの）
 
-LepinoidTools (`LepinoidTools.jar`) と Multiverse-Core (`Multiverse-Core.jar`) は **自動更新基盤 (issue #4)** で管理する。`plugin-versions.yaml` の desired manifest を CronJob `plugin-updater` (5 分周期、suspend 中) が検出し、gate プラグインによる login 閉鎖 → jar 置換 → Pod 再起動 → 閉鎖解除を自動で行う。journal は `/data/plugins/.lepinoid/` に atomic に記録され、CronJob 中断時も次回起動で phase に応じて回復する。手動介入が必要な場合は `journal/.blocking/` に blocking record が記録される (rescue 手順は `updater/README.md`)。
+LepinoidTools (`LepinoidTools.jar`) と Multiverse-Core (`Multiverse-Core.jar`) は **自動更新基盤 (issue #4)** で管理する。`plugin-versions.yaml` の desired manifest を CronJob `plugin-updater` (5 分周期) が検出し、gate プラグインによる login 閉鎖 → jar 置換 → Pod 再起動 → 閉鎖解除を自動で行う。journal は `/data/plugins/.lepinoid/` に atomic に記録され、CronJob 中断時も次回起動で phase に応じて回復する。手動介入が必要な場合は `journal/.blocking/` に blocking record が記録される (rescue 手順は `updater/README.md`)。
+
+plugin-updater Pod の egress は CiliumNetworkPolicy `plugin-updater-egress` で kube-apiserver (443) / GHCR (443) / kube-dns (53) の 3 系統のみに制限している。MC バージョンが desired manifest の `supportedMinecraft` に一致しない場合は updater が SUSPENDED で保留する（詳細は issue #12）。
 
 ### PVC 手動維持（有料）
 
