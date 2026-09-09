@@ -37,7 +37,7 @@ jobs:
         run: ci/resolve-plugin-bundle.sh
       - name: Revalidate source HEAD and commit desired state
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
           PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
         run: |
