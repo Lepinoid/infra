@@ -33,3 +33,41 @@ spec:
     - Egress
   egress:
     - {}
+---
+# plugin-updater CronJob からの Egress 許可（CiliumNetworkPolicy）
+# 許可するのは kube-apiserver / GHCR / kube-dns の 3 系統のみ
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: plugin-updater-egress
+spec:
+  endpointSelector:
+    matchLabels:
+      app: plugin-updater-job
+  egress:
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    - toFQDNs:
+        - matchName: ghcr.io
+        - matchPattern: "*.ghcr.io"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
