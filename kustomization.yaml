@@ -39,7 +39,6 @@ resources:
   - build-server/service.yaml
   - build-server/mysql-deployment.yaml
   - build-server/mysql-service.yaml
-  - build-server/backup-cronjob.yaml
   - build-server/network-policy.yaml
   - build-server/plugin-versions.yaml
   - build-server/plugin-updater-sa.yaml
