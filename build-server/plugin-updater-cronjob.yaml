@@ -4,7 +4,6 @@ metadata:
   name: plugin-updater
 spec:
   schedule: "*/5 * * * *"
-  suspend: true
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -21,14 +20,26 @@ spec:
         spec:
           serviceAccountName: plugin-updater
           restartPolicy: Never
+          # Longhorn dataLocality: strict-local のため mainworker-1 にピン留め（Deployment と同条件）
+          nodeSelector:
+            kubernetes.io/hostname: mainworker-1
+          imagePullSecrets:
+            - name: ghcr-pull-secret
           securityContext:
             seccompProfile:
               type: RuntimeDefault
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: build-server-data
           containers:
             - name: updater
               image: ghcr.io/lepinoid/plugin-updater:26.09.08-6001a@sha256:f66de5f8bd3c93559d2704765950674d33238763cd76f013f79a7acaeddf3abc
               imagePullPolicy: IfNotPresent
               args: ["run"]
+              volumeMounts:
+                - name: data
+                  mountPath: /data
               env:
                 - name: JOB_UID
                   valueFrom:
