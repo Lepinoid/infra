@@ -44,14 +44,13 @@ spec:
               env:
                 - name: KUBECONFIG
                   value: ""
-              volumeMounts:
-                - name: data
-                  mountPath: /data
-              env:
                 - name: JOB_UID
                   valueFrom:
                     fieldRef:
                       fieldPath: metadata.uid
+              volumeMounts:
+                - name: data
+                  mountPath: /data
               resources:
                 requests:
                   cpu: 20m
