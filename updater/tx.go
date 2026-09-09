@@ -27,7 +27,7 @@ const constRoot = "/data/plugins/.lepinoid"
 
 type tx struct {
 	ctx      context.Context
-	commands cluster.Commands
+	commands cluster.Runner
 	store    journal.Store
 	engine   *updaterengine.Engine
 	now      func() time.Time
@@ -618,12 +618,26 @@ func (t *tx) runActive() error {
 	if plan == nil {
 		return errors.New("tx.plan unset")
 	}
+	if t.j.SuspendReason != nil && (*t.j.SuspendReason == "mc-version-mismatch" || *t.j.SuspendReason == "mc-version-unknown") {
+		if pass, reason := t.mcVersionGate(plan); !pass {
+			return t.suspendMCVersion(reason)
+		}
+		t.j.Lifecycle = "ACTIVE"
+		t.j.SuspendReason = nil
+		t.engine.Journal = t.j
+		if err := t.saveJournal(); err != nil {
+			return err
+		}
+	}
 	type step struct {
 		phase string
 		run   func() error
 	}
 	steps := []step{
 		{"PREPARING", func() error {
+			if pass, reason := t.mcVersionGate(plan); !pass {
+				return t.suspendMCVersion(reason)
+			}
 			if err := t.a4Stage(plan); err != nil {
 				return err
 			}
@@ -714,6 +728,9 @@ func (t *tx) runActive() error {
 		}
 		if err := s.run(); err != nil {
 			return err
+		}
+		if t.j.Lifecycle == "SUSPENDED" {
+			return nil
 		}
 	}
 	outcome := "SUCCEEDED"
@@ -831,13 +848,14 @@ func runTransaction(ctx context.Context, lock *lease.Lease) error {
 	if err := store.Init(); err != nil {
 		return err
 	}
+	commands := cluster.Commands{Timeout: 20 * time.Second}
 	t := &tx{
 		ctx:      ctx,
-		commands: cluster.Commands{Timeout: 20 * time.Second},
+		commands: commands,
 		store:    store,
 		now:      time.Now,
 	}
-	pod, err := t.commands.Pod(ctx)
+	pod, err := commands.Pod(ctx)
 	if err != nil {
 		return err
 	}
