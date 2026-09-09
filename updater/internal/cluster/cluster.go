@@ -78,9 +78,9 @@ type leaseWire struct {
 		ResourceVersion string `json:"resourceVersion"`
 	} `json:"metadata"`
 	Spec struct {
-		Holder    string    `json:"holderIdentity"`
-		RenewedAt time.Time `json:"renewTime"`
-		Duration  int       `json:"leaseDurationSeconds"`
+		Holder    string `json:"holderIdentity"`
+		RenewedAt string `json:"renewTime"`
+		Duration  int    `json:"leaseDurationSeconds"`
 	} `json:"spec"`
 }
 
@@ -93,7 +93,15 @@ func (a LeaseAPI) Get(ctx context.Context) (lease.Record, error) {
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return lease.Record{}, err
 	}
-	return lease.Record{ResourceVersion: wire.Metadata.ResourceVersion, Holder: wire.Spec.Holder, RenewedAt: wire.Spec.RenewedAt, Duration: wire.Spec.Duration}, nil
+	var renewedAt time.Time
+	if wire.Spec.RenewedAt != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, wire.Spec.RenewedAt)
+		if err != nil {
+			return lease.Record{}, fmt.Errorf("parse renewTime %q: %w", wire.Spec.RenewedAt, err)
+		}
+		renewedAt = parsed
+	}
+	return lease.Record{ResourceVersion: wire.Metadata.ResourceVersion, Holder: wire.Spec.Holder, RenewedAt: renewedAt, Duration: wire.Spec.Duration}, nil
 }
 
 func (a LeaseAPI) Update(ctx context.Context, r lease.Record) (lease.Record, error) {
@@ -101,7 +109,9 @@ func (a LeaseAPI) Update(ctx context.Context, r lease.Record) (lease.Record, err
 	wire.Metadata.Name = "plugin-updater"
 	wire.Metadata.ResourceVersion = r.ResourceVersion
 	wire.Spec.Holder = r.Holder
-	wire.Spec.RenewedAt = r.RenewedAt
+	// Kubernetes の MicroTime はナノ秒9桁の RFC3339Nano を受理しない
+	// ("2006-01-02T15:04:05.000000Z07:00" としてパースされる) ため秒精度に丸める。
+	wire.Spec.RenewedAt = r.RenewedAt.UTC().Format(time.RFC3339)
 	wire.Spec.Duration = r.Duration
 	data, err := json.Marshal(wire)
 	if err != nil {
