@@ -14,7 +14,7 @@ spec:
       annotations:
         # world-bundle.yml / update-world-versions.yml が desired digest で更新する。
         # この annotation 変更が Pod template を変えるため rollout が発生し world-sync initContainer が切替を行う。
-        lepinoid.dev/world-bundle-digest: ""
+        lepinoid.dev/world-bundle-digest: "sha256:7265287e83edde00d29df063c52f14c285248f7f2e43b8d15f9aacf17cee648e"
       labels:
         app: lepinoid
     spec:
