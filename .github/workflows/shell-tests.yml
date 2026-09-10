@@ -5,11 +5,13 @@ on:
     branches: [main]
     paths:
       - 'ci/**'
+      - 'lepinoid/*.sh'
       - '.github/workflows/shell-tests.yml'
   push:
     branches: [main]
     paths:
       - 'ci/**'
+      - 'lepinoid/*.sh'
 
 permissions: {}
 
@@ -20,8 +22,15 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           persist-credentials: false
+      - name: Install busybox
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends busybox-static
       - name: Syntax check (bash -n)
-        run: bash -n ci/*.sh ci/lib/*.sh ci/lib/*_test.sh
+        run: |
+          bash -n ci/*.sh ci/lib/*.sh ci/lib/*_test.sh
+          if ls lepinoid/*.sh >/dev/null 2>&1; then
+            bash -n lepinoid/*.sh
+            busybox sh -n lepinoid/*.sh
+          fi
       - name: Run unit tests
         run: |
           set -euo pipefail
