@@ -92,6 +92,20 @@ spec:
                 "githubToken": "${GITHUB_TOKEN}"
               }
               EOF
+              # world-sync が配布するワールドを mod が読み込むための worlds 設定（terrestrial=1 台ロード）
+              cat > /config/config.json << EOF
+              {
+                "worlds": {
+                  "terrestrial": 1
+                },
+                "vanilla": {
+                  "genOverworld": true,
+                  "genDimensions": true,
+                  "mobSpawn": true,
+                  "naturalRegeneration": true
+                }
+              }
+              EOF
           env:
             - name: DB_USER
               valueFrom:
@@ -182,6 +196,10 @@ spec:
             - name: lepinoid-configs
               mountPath: /data/config/lepinoid/auth.json
               subPath: auth.json
+              readOnly: true
+            - name: lepinoid-configs
+              mountPath: /data/config/lepinoid/config.json
+              subPath: config.json
               readOnly: true
           livenessProbe:
             tcpSocket:
