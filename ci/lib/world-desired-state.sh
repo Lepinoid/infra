@@ -16,31 +16,70 @@ world_desired_set_annotation() {
   [[ $digest =~ $WORLD_DIGEST_RE ]] || return 1
   tmp=$(mktemp "${deployment}.tmp.XXXXXX") || return 1
   if ! awk -v digest="$digest" '
-    BEGIN { template=0; template_metadata=0; annotations=0; key_count=0 }
-    /^    template:[[:space:]]*$/ { template=1; next_line=0 }
-    template && /^      metadata:[[:space:]]*$/ { template_metadata=1 }
-    template_metadata && /^        annotations:[[:space:]]*$/ {
-      annotations=1; print; next
+    {
+      # indentation = number of leading spaces
+      n = 0
+      while (substr($0, n + 1, 1) == " ") n++
+      content = substr($0, n + 1)
+      line_is_comment = (content ~ /^#/)
+
+      # Pop context when we dedent to a sibling/parent level.
+      if (in_annotations && !line_is_comment && n <= annotations_indent) in_annotations = 0
+      if (in_template_metadata && !line_is_comment && n <= template_metadata_indent) {
+        if (!found_key && had_annotations) print_key(annotations_indent + 2)
+        in_template_metadata = 0
+      }
+      if (in_template && !line_is_comment && n <= template_indent) in_template = 0
     }
-    template_metadata && /^        annotations:[[:space:]]*\{[[:space:]]*\}[[:space:]]*$/ {
-      annotations=1; print "        annotations:"; print "          lepinoid.dev/world-bundle-digest: \"" digest "\""; next
+    in_template == 0 && content == "template:" && $0 ~ /^  template:[[:space:]]*$/ {
+      in_template = 1; template_indent = n
     }
-    template_metadata && /^        lepinoid\.dev\/world-bundle-digest:[[:space:]]*/ {
-      key_count++; print "        lepinoid.dev/world-bundle-digest: \"" digest "\""; next
+    in_template && content == "metadata:" && $0 ~ ("^" spaces_of(template_indent + 2) "metadata:[[:space:]]*$") {
+      in_template_metadata = 1; template_metadata_indent = n
     }
-    template_metadata && annotations && /^[^[:space:]]/ { if (key_count == 0) print "          lepinoid.dev/world-bundle-digest: \"" digest "\""; annotations=0 }
+    in_template_metadata && content == "annotations:" && $0 ~ ("^" spaces_of(template_metadata_indent + 2) "annotations:[[:space:]]*$") {
+      in_annotations = 1; annotations_indent = n; had_annotations = 1
+      print; next
+    }
+    in_annotations && !line_is_comment && content ~ /^lepinoid\.dev\/world-bundle-digest:/ {
+      key_count++
+      print spaces_of(n) "lepinoid.dev/world-bundle-digest: \"" digest "\""
+      found_key = 1
+      next
+    }
     { print }
     END {
       if (key_count > 1) exit 2
+      # annotations block existed but key was absent and block ran to EOF
+      if (!found_key && in_template_metadata && had_annotations) print_key(annotations_indent + 2)
+    }
+    function print_key(indent) {
+      print spaces_of(indent) "lepinoid.dev/world-bundle-digest: \"" digest "\""
+    }
+    function spaces_of(count,   i, s) {
+      s = ""
+      for (i = 0; i < count; i++) s = s " "
+      return s
     }
   ' "$deployment" > "$tmp"; then
     rm -f "$tmp"; return 1
   fi
-  # Add a missing annotations block immediately before the template metadata's labels/spec.
-  if ! grep -q '^        lepinoid\.dev/world-bundle-digest:' "$tmp"; then
+  # If no annotations block existed at all, create one under spec.template.metadata.
+  if ! grep -q 'lepinoid\.dev/world-bundle-digest:' "$tmp"; then
     awk -v digest="$digest" '
-      /^      metadata:[[:space:]]*$/ && seen_template { print; print "        annotations:"; print "          lepinoid.dev/world-bundle-digest: \"" digest "\""; seen_template=0; next }
-      /^    template:[[:space:]]*$/ { seen_template=1 }
+      {
+        n = 0
+        while (substr($0, n + 1, 1) == " ") n++
+        content = substr($0, n + 1)
+      }
+      $0 ~ /^      metadata:[[:space:]]*$/ && in_template {
+        print
+        printf "        annotations:\n"
+        printf "          lepinoid.dev/world-bundle-digest: \"%s\"\n", digest
+        done = 1
+        next
+      }
+      $0 ~ /^  template:[[:space:]]*$/ { in_template = 1 }
       { print }
     ' "$tmp" > "${tmp}.2" && mv "${tmp}.2" "$tmp"
   fi
