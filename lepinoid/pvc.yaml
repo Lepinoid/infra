@@ -8,4 +8,5 @@ spec:
   storageClassName: longhorn
   resources:
     requests:
-      storage: 1Gi
+      # world-sync の staging/現行/展開領域のため拡張 (issue #30)
+      storage: 2Gi
