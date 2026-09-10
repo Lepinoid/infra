@@ -1,0 +1,9 @@
+# CI (world-bundle.yml / update-world-versions.yml) が管理します。人手で直接編集しないでください。
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: world-versions
+data:
+  digest: ""
+  version: ""
+  gitCommitSha: ""

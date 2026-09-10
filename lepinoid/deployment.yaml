@@ -11,6 +11,10 @@ spec:
     type: Recreate
   template:
     metadata:
+      annotations:
+        # world-bundle.yml / update-world-versions.yml が desired digest で更新する。
+        # この annotation 変更が Pod template を変えるため rollout が発生し world-sync initContainer が切替を行う。
+        lepinoid.dev/world-bundle-digest: ""
       labels:
         app: lepinoid
     spec:
@@ -114,6 +118,47 @@ spec:
             limits:
               cpu: 10m
               memory: 32Mi
+        # world-sync: desired bundle digest の /data/<world> への反映 (issue #30)。/data は root 所有のため runAsUser:0。script は ConfigMap world-sync-script 由来。
+        - name: world-sync
+          image: ghcr.io/lepinoid/plugin-updater:26.09.09-e53d4@sha256:2be4cde3ec89d76b323aed4f4ab77fd664acad713ffb91a3923a2bd85942dc92
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/busybox", "sh", "/scripts/world-sync-init.sh"]
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+          env:
+            - name: WORLD_BUNDLE_DIGEST
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['lepinoid.dev/world-bundle-digest']
+            - name: WORLD_BUNDLE_REPOSITORY
+              value: ghcr.io/lepinoid/world-bundle
+            - name: REGISTRY_CONFIG
+              value: /var/run/ghcr/.dockerconfigjson
+            - name: DATA_DIR
+              value: /data
+            - name: WORK_DIR
+              value: /work
+            - name: PULL_TIMEOUT_SECONDS
+              value: "900"
+          volumeMounts:
+            - name: lepinoid-data
+              mountPath: /data
+            - name: world-sync-script
+              mountPath: /scripts
+              readOnly: true
+            - name: ghcr-pull-secret
+              mountPath: /var/run/ghcr
+              readOnly: true
+            - name: world-sync-work
+              mountPath: /work
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: "1"
+              memory: 256Mi
       containers:
         - name: lepinoid
           image: ghcr.io/lepinoid/lepinoid:6fa8298
@@ -161,3 +206,12 @@ spec:
             claimName: lepinoid-data
         - name: lepinoid-configs
           emptyDir: {}
+        - name: world-sync-script
+          configMap:
+            name: world-sync-script
+        - name: ghcr-pull-secret
+          secret:
+            secretName: ghcr-pull-secret
+        - name: world-sync-work
+          emptyDir:
+            sizeLimit: 1Gi

@@ -1,0 +1,15 @@
+# GitOps 管理の正本です。world-bundle.yml ワークフローが Git から読み取ります。
+# ワールドを追加する場合は、README の「ワールド配布」セクションを確認し、
+# lepinoid リポジトリの WorldType.kt にも追加してください。
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: world-sync-config
+data:
+  config.json: |
+    {
+      "schemaVersion": 1,
+      "worlds": [
+        {"name": "terrestrial", "enabled": true}
+      ]
+    }

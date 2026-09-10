@@ -31,6 +31,8 @@ resources:
   - lepinoid/deployment.yaml
   - lepinoid/service.yaml
   - lepinoid/network-policy.yaml
+  - lepinoid/world-sync-config.yaml
+  - lepinoid/world-versions.yaml
   - build-server/mysql-credentials.sops.yaml
   - build-server/git-credentials.sops.yaml
   - build-server/pvc.yaml
@@ -45,3 +47,8 @@ resources:
   - build-server/plugin-updater-rbac.yaml
   - build-server/plugin-updater-lease.yaml
   - build-server/plugin-updater-cronjob.yaml
+
+configMapGenerator:
+  - name: world-sync-script
+    files:
+      - lepinoid/world-sync-init.sh
