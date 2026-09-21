@@ -89,6 +89,31 @@ spec:
             limits:
               cpu: 50m
               memory: 64Mi
+        # couchdb 型パターン: Secret (正本) を read-only マウントし PVC 上へコピー (infra#34)。
+        # プラグイン jar の配置 (plugin-updater-init) より後段に置き、jar 配置済みの状態で
+        # 静的 config.yml を上書き配置する。毎起動で上書きするため PVC 上の手動編集は
+        # 再起動で Secret の内容に戻る (Secret が正本)。
+        - name: copy-lepinoid-tools-config
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              mkdir -p /data/plugins/LepinoidTools
+              cp /config-template/config.yml /data/plugins/LepinoidTools/config.yml
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: lepinoid-tools-config
+              mountPath: /config-template
+              readOnly: true
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              cpu: 10m
+              memory: 32Mi
       containers:
         - name: minecraft
           image: itzg/minecraft-server:latest
@@ -181,3 +206,6 @@ spec:
         - name: git-credentials
           secret:
             secretName: build-server-git-credentials
+        - name: lepinoid-tools-config
+          secret:
+            secretName: lepinoid-tools-config
