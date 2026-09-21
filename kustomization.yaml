@@ -35,6 +35,7 @@ resources:
   - lepinoid/world-versions.yaml
   - build-server/mysql-credentials.sops.yaml
   - build-server/git-credentials.sops.yaml
+  - build-server/lepinoid-tools-config.sops.yaml
   - build-server/pvc.yaml
   - build-server/mysql-pvc.yaml
   - build-server/deployment.yaml
