@@ -59,6 +59,10 @@ spec:
     - toFQDNs:
         - matchName: ghcr.io
         - matchPattern: "*.ghcr.io"
+        # GHCR の blob GET は pkg-containers.githubusercontent.com（blob CDN）へ
+        # 307 リダイレクトされる。oras blob fetch がリダイレクトを追従するため許可が必須
+        # （infra#36 で staging fetch が 20s timeout kill される障害の原因）。
+        - matchName: pkg-containers.githubusercontent.com
       toPorts:
         - ports:
             - port: "443"
