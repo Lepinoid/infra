@@ -493,15 +493,36 @@ func (t *tx) b5Backup(plan *manifestPlan) error {
 		if err := fsutil.Write(filepath.Join(dir, "whitelist.json"), data); err != nil {
 			return err
 		}
-		t.j.Maintenance.WhitelistBackup = ptr(base64.StdEncoding.EncodeToString(data))
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := journal.Save(filepath.Join(dir, "metadata.json"), metadata); err != nil {
+		return err
+	}
+	return t.saveJournal()
+}
+
+// recordWhitelistSnapshot は vault B0 契約（snapshot はこの時点で一度だけ取得し、
+// 以降の復元元に固定。PersistedEnabled 確定済みなら再取得しない = resume 互換）で
+// whitelist snapshot を journal に確定する。maintenanceRequired=true を置く前に
+// 必ず完了させること（B0 後の突発再起動から init-recover が閉鎖を再確立できる
+// ようにするための前提）。
+func (t *tx) recordWhitelistSnapshot() error {
+	m := &t.j.Maintenance
+	if m.PersistedEnabled != nil {
+		return nil
+	}
+	whitelist := filepath.Join("/data", "whitelist.json")
+	if data, err := os.ReadFile(whitelist); err == nil {
+		m.WhitelistBackup = ptr(base64.StdEncoding.EncodeToString(data))
 		sum, err := fsutil.SHA256(whitelist)
 		if err != nil {
 			return err
 		}
-		t.j.Maintenance.WhitelistChecksum = ptr(sum)
-		t.j.Maintenance.WhitelistExisted = ptr(true)
+		m.WhitelistChecksum = ptr(sum)
+		m.WhitelistExisted = ptr(true)
 	} else if errors.Is(err, os.ErrNotExist) {
-		t.j.Maintenance.WhitelistExisted = ptr(false)
+		m.WhitelistExisted = ptr(false)
 	} else {
 		return err
 	}
@@ -509,11 +530,47 @@ func (t *tx) b5Backup(plan *manifestPlan) error {
 	if err != nil {
 		return err
 	}
-	t.j.Maintenance.PersistedEnabled = ptr(persisted)
-	t.j.Maintenance.StartedAt = ptr(t.now().UTC())
-	if err := journal.Save(filepath.Join(dir, "metadata.json"), metadata); err != nil {
+	m.PersistedEnabled = ptr(persisted)
+	runtime, err := t.measureRuntimeWhitelist()
+	if err != nil {
 		return err
 	}
+	m.RuntimeEnabled = ptr(runtime)
+	m.StartedAt = ptr(t.now().UTC())
+	t.engine.Journal = t.j
+	return nil
+}
+
+func (t *tx) measureRuntimeWhitelist() (bool, error) {
+	response, err := t.rcon("whitelist", "on")
+	if err != nil {
+		return false, err
+	}
+	switch strings.TrimSpace(response) {
+	case "Whitelist is already turned on":
+		return true, nil
+	case "Whitelist is now turned on":
+		restored, err := t.rcon("whitelist", "off")
+		if err != nil {
+			return false, err
+		}
+		if strings.TrimSpace(restored) != "Whitelist is now turned off" {
+			return false, journal.ErrSchema
+		}
+		return false, nil
+	default:
+		return false, journal.ErrSchema
+	}
+}
+
+func (t *tx) b0EnterMaintenance() error {
+	if err := t.recordWhitelistSnapshot(); err != nil {
+		return err
+	}
+	t.j.AccessState = "CLOSING"
+	t.j.Phase = "MAINTENANCE_PREPARED"
+	t.j.MaintenanceRequired = true
+	t.engine.Journal = t.j
 	return t.saveJournal()
 }
 
@@ -546,7 +603,7 @@ func (t *tx) b7AnnotateRestart(plan *manifestPlan) error {
 		if err != nil {
 			return err
 		}
-		_, err = t.commands.Kubectl(ctx, patch, "patch", "deployment", "build-server", "--type=strategic", "--patch-file=-")
+		_, err = t.commands.Kubectl(ctx, nil, "patch", "deployment", "build-server", "--type=strategic", "-p", string(patch))
 		return err
 	})
 }
@@ -739,12 +796,12 @@ func (t *tx) runActive() error {
 			return t.saveJournal()
 		}},
 		{"STAGED", func() error {
-			t.j.AccessState = "CLOSING"
-			t.j.Phase = "MAINTENANCE_PREPARED"
-			t.engine.Journal = t.j
-			return t.saveJournal()
+			return t.b0EnterMaintenance()
 		}},
 		{"MAINTENANCE_PREPARED", func() error {
+			if err := t.recordWhitelistSnapshot(); err != nil {
+				return err
+			}
 			if err := t.a5GateClosed(); err != nil {
 				return err
 			}
