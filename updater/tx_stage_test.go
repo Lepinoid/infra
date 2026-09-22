@@ -83,7 +83,7 @@ func newStageFixture(t *testing.T) stageFixture {
 			"size":      2,
 		},
 		"layers": []map[string]any{{
-			"mediaType": "application/vnd.oci.image.layer.v1.tar",
+			"mediaType": "application/vnd.lepinoid.tools.bundle.layer.v1.tar",
 			"digest":    "sha256:" + layerDigest,
 			"size":      blob.Len(),
 		}},
@@ -216,6 +216,20 @@ func TestA4StageRejectsNonSingleTarLayerManifest(t *testing.T) {
 			}
 			return body
 		}},
+		{"oci standard tar layer", func(fx stageFixture) []byte {
+			// The publish contract is application/vnd.lepinoid.tools.bundle.layer.v1.tar;
+			// even the OCI standard uncompressed tar type must be rejected.
+			var m map[string]any
+			if err := json.Unmarshal(fx.manifestJSON, &m); err != nil {
+				t.Fatal(err)
+			}
+			m["layers"].([]any)[0].(map[string]any)["mediaType"] = "application/vnd.oci.image.layer.v1.tar"
+			body, err := json.Marshal(m)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return body
+		}},
 		{"non sha256 layer digest", func(fx stageFixture) []byte {
 			var m map[string]any
 			if err := json.Unmarshal(fx.manifestJSON, &m); err != nil {
@@ -238,6 +252,34 @@ func TestA4StageRejectsNonSingleTarLayerManifest(t *testing.T) {
 				t.Fatal("non-conforming manifest accepted")
 			}
 		})
+	}
+}
+
+// Publish-contract regression (infra#36 round-trip 1): LepinoidTools
+// ci/publish-bundle.sh publishes the layer as
+// application/vnd.lepinoid.tools.bundle.layer.v1.tar. Assuming the OCI
+// standard tar type rejected the real bundle and stopped staging in
+// production. The mediaType is spelled out explicitly here so the contract
+// under test does not silently drift with the shared fixture.
+func TestA4StageAcceptsPublishContractLayerMediaType(t *testing.T) {
+	fx := newStageFixture(t)
+	x := stageTransaction(t, fx.manifest)
+	var m map[string]any
+	if err := json.Unmarshal(fx.manifestJSON, &m); err != nil {
+		t.Fatal(err)
+	}
+	m["layers"].([]any)[0].(map[string]any)["mediaType"] = "application/vnd.lepinoid.tools.bundle.layer.v1.tar"
+	manifestBody, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	descriptor := []byte(fmt.Sprintf(`{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":%q,"size":%d}`, fx.manifest.Digest, len(manifestBody)))
+	x.commands = orasStub(t, fx, descriptor, manifestBody, fx.tarBytes, nil)
+	if err := x.a4Stage(x.plan); err != nil {
+		t.Fatalf("publish-contract layer mediaType rejected: %v", err)
+	}
+	if err := artifact.Verify(x.store.Path("staging", fx.manifest.Digest), fx.manifest); err != nil {
+		t.Fatalf("staged bundle does not verify: %v", err)
 	}
 }
 

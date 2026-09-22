@@ -296,6 +296,13 @@ func (t *tx) a4Stage(plan *manifestPlan) error {
 
 var sha256DigestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 
+// bundleLayerMediaType は publish 側の layer mediaType 契約（出典: LepinoidTools
+// ci/publish-bundle.sh:15-16 の LAYER_MEDIA_TYPE）。回帰記録 (infra#36 往復1):
+// OCI 標準の application/vnd.oci.image.layer.v1.tar を仮定したため、実際は
+// application/vnd.lepinoid.tools.bundle.layer.v1.tar で publish される bundle を
+// staging が拒否して停止した。構造契約（単一の非圧縮 tar 1 layer）の検査は維持する。
+const bundleLayerMediaType = "application/vnd.lepinoid.tools.bundle.layer.v1.tar"
+
 // fetchBundleBlob は pin 済み manifest digest から OCI manifest を解決し、
 // 単一の非圧縮 tar layer の blob digest で bundle を取得する。
 // 回帰記録 (infra#36): 旧実装は `oras blob fetch <repo>@<manifest digest>` を
@@ -340,7 +347,7 @@ func (t *tx) fetchBundleBlob(plan *manifestPlan) ([]byte, error) {
 		return nil, fmt.Errorf("%w: bundle manifest must have exactly one layer, got %d", artifact.ErrArtifact, len(manifest.Layers))
 	}
 	layer := manifest.Layers[0]
-	if layer.MediaType != "application/vnd.oci.image.layer.v1.tar" {
+	if layer.MediaType != bundleLayerMediaType {
 		return nil, fmt.Errorf("%w: unsupported layer media type %q (uncompressed tar required)", artifact.ErrArtifact, layer.MediaType)
 	}
 	if !sha256DigestPattern.MatchString(layer.Digest) {
