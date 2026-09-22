@@ -3,6 +3,7 @@ package updater
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -27,6 +28,31 @@ func (e *Engine) Save(ctx context.Context) error {
 		return err
 	}
 	return journal.Save(e.Store.Path("journal", e.Journal.TransactionID), e.Journal)
+}
+
+// RefreshFence は deployment patch 成功のように「外部 generation の前進が規定」な境界で
+// フェンス基準（podUID/generation）を journal へ確定する。syncFlag が真のとき
+// maintenance.flag も同じ generation へ揃える（揃えないと gate ack の
+// identity.Generation 照合が journal と永久に噛み合わない）。他人 txn の flag を
+// 発見した場合は上書きせずエラーとする。
+func (e *Engine) RefreshFence(ctx context.Context, podUID string, generation int64, syncFlag bool) error {
+	if syncFlag {
+		flagPath := e.Store.Path("maintenance.flag")
+		if flag, err := journal.Read[journal.Flag](flagPath); err == nil {
+			if flag.TransactionID != e.Journal.TransactionID {
+				return fmt.Errorf("maintenance.flag transactionId=%q does not match journal %q", flag.TransactionID, e.Journal.TransactionID)
+			}
+			flag.FencingGeneration = generation
+			if err := journal.Save(flagPath, flag); err != nil {
+				return err
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	e.Journal.ExpectedPodUID = podUID
+	e.Journal.FencingGeneration = generation
+	return e.Save(ctx)
 }
 
 func (e *Engine) Phase(ctx context.Context, phase string) error {
