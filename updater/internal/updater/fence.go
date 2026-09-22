@@ -3,6 +3,8 @@ package updater
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/lepinoid/infra/updater/internal/journal"
 )
@@ -33,10 +35,20 @@ func (f Fence) Check(ctx context.Context, j journal.Journal) error {
 		return err
 	}
 	if observed.Blocked {
-		return ErrBlocked
+		return fmt.Errorf("%w: a FAILED_MANUAL_INTERVENTION journal is pending manual resolution", ErrBlocked)
 	}
-	if observed.PodUID != j.ExpectedPodUID || observed.Generation != j.FencingGeneration || observed.RecoveryPending {
-		return ErrFenced
+	var mismatches []string
+	if observed.PodUID != j.ExpectedPodUID {
+		mismatches = append(mismatches, fmt.Sprintf("expectedPodUid: journal has %q but deployment runs pod %q", j.ExpectedPodUID, observed.PodUID))
+	}
+	if observed.Generation != j.FencingGeneration {
+		mismatches = append(mismatches, fmt.Sprintf("fencingGeneration: journal pins %d but deployment is %d", j.FencingGeneration, observed.Generation))
+	}
+	if observed.RecoveryPending {
+		mismatches = append(mismatches, "recoveryPending: init-recover is establishing closure")
+	}
+	if len(mismatches) > 0 {
+		return fmt.Errorf("%w: %s", ErrFenced, strings.Join(mismatches, "; "))
 	}
 	return nil
 }

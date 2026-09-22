@@ -16,6 +16,7 @@ import (
 	"github.com/lepinoid/infra/updater/internal/artifact"
 	"github.com/lepinoid/infra/updater/internal/cluster"
 	"github.com/lepinoid/infra/updater/internal/fsutil"
+	"github.com/lepinoid/infra/updater/internal/gate"
 	"github.com/lepinoid/infra/updater/internal/journal"
 	"github.com/lepinoid/infra/updater/internal/lease"
 	"github.com/lepinoid/infra/updater/internal/players"
@@ -587,7 +588,7 @@ func (t *tx) b7AnnotateRestart(plan *manifestPlan) error {
 	if err := t.saveJournal(); err != nil {
 		return err
 	}
-	return t.api(func(ctx context.Context) error {
+	if err := t.api(func(ctx context.Context) error {
 		patch, err := json.Marshal(map[string]any{
 			"spec": map[string]any{
 				"template": map[string]any{
@@ -605,7 +606,18 @@ func (t *tx) b7AnnotateRestart(plan *manifestPlan) error {
 		}
 		_, err = t.commands.Kubectl(ctx, nil, "patch", "deployment", "build-server", "--type=strategic", "-p", string(patch))
 		return err
-	})
+	}); err != nil {
+		return err
+	}
+	// patch 成功で deployment generation は規定どおり +1 進む。この境界で
+	// フェンス基準を進めないと、b8 の podUID 記録を含む以後の全 journal 保存が
+	// fenced となり txn が RESTART_REQUESTED を完走できない。
+	t.engine.Journal = t.j
+	if err := t.engine.RefreshFence(t.ctx, t.podUID, generation, t.j.MaintenanceRequired); err != nil {
+		return err
+	}
+	t.j = t.engine.Journal
+	return nil
 }
 
 func (t *tx) b8Rollout() error {
@@ -714,12 +726,90 @@ func (t *tx) b11GC() error {
 func (t *tx) recoverEntry(j journal.Journal) error {
 	t.j = j
 	t.engine.Journal = j
+	if err := t.refreshFenceOnResume(); err != nil {
+		return err
+	}
 	switch j.Phase {
 	case "ACCESS_RESTORE_COMPLETE", "ROLLBACK_RESTART_REQUESTED":
 		return nil
 	default:
 		return t.runActive()
 	}
+}
+
+// verifyInstalledPair はテストが /data/plugins を差し替えられるようにする結合点。
+var verifyInstalledPair = func(pair journal.Pair) error {
+	for _, jar := range []journal.Jar{pair.Tools, pair.Multiverse} {
+		if err := fsutil.VerifyJar(filepath.Join(pluginsDir, jar.Name), jar.SHA256); err != nil {
+			return fmt.Errorf("installed jar %s: %w", jar.Name, err)
+		}
+	}
+	return nil
+}
+
+func (t *tx) refreshFenceOnResume() error {
+	observed, err := t.engine.Fence.Observe(t.ctx)
+	if err != nil {
+		return err
+	}
+	if observed.PodUID == t.j.ExpectedPodUID && observed.Generation == t.j.FencingGeneration {
+		return nil
+	}
+	if !t.j.MaintenanceRequired {
+		return t.refreshFence(observed, false)
+	}
+	if err := t.verifyClosureIntact(observed); err != nil {
+		if serr := t.j.Suspend("closure-verification-failed"); serr != nil {
+			return errors.Join(fmt.Errorf("closure verification failed: %w", err), serr)
+		}
+		t.engine.Journal = t.j
+		// フェンス不一致が確定している状況では engine.Save 自体が fenced となるため、
+		// mutation 権放棄の記録（suspend）のみフェンス検査を迂回して永続化する。
+		if werr := journal.Save(t.store.Path("journal", t.j.TransactionID), t.j); werr != nil {
+			return errors.Join(fmt.Errorf("closure verification failed: %w", err), werr)
+		}
+		return fmt.Errorf("closure verification failed: %w", err)
+	}
+	return t.refreshFence(observed, true)
+}
+
+func (t *tx) refreshFence(observed updaterengine.Observation, syncFlag bool) error {
+	t.engine.Journal = t.j
+	if err := t.engine.RefreshFence(t.ctx, observed.PodUID, observed.Generation, syncFlag); err != nil {
+		return err
+	}
+	t.j = t.engine.Journal
+	return nil
+}
+
+// verifyClosureIntact は maintenance 中 journal の再開時に「閉鎖が壊れていない」こと
+// だけを確認する: maintenance.flag がこの txn のもの、gate-status が flag に基づく
+// identity で ACTIVE かつ fresh、インストール済み jar が commitCandidate 世代の
+// pair と一致する。一通りでも壊れていれば refresh は許可しない。
+func (t *tx) verifyClosureIntact(observed updaterengine.Observation) error {
+	flag, err := journal.Read[journal.Flag](t.store.Path("maintenance.flag"))
+	if err != nil {
+		return fmt.Errorf("maintenance.flag unreadable: %w", err)
+	}
+	if flag.TransactionID != t.j.TransactionID {
+		return fmt.Errorf("maintenance.flag belongs to transaction %q, not %q", flag.TransactionID, t.j.TransactionID)
+	}
+	status, err := journal.Read[gate.Status](t.store.Path("gate-status.json"))
+	if err != nil {
+		return fmt.Errorf("gate-status.json unreadable: %w", err)
+	}
+	id := gate.Identity{PodUID: observed.PodUID, TransactionID: t.j.TransactionID, Generation: flag.FencingGeneration}
+	if !status.Active(id, t.now()) {
+		return fmt.Errorf("gate-status.json: no fresh ACTIVE ack for pod %q at flag generation %d", observed.PodUID, flag.FencingGeneration)
+	}
+	candidate := "SOURCE"
+	if t.j.CommitCandidate != nil {
+		candidate = *t.j.CommitCandidate
+	}
+	if err := verifyInstalledPair(t.j.Candidate()); err != nil {
+		return fmt.Errorf("commitCandidate=%s: %w", candidate, err)
+	}
+	return nil
 }
 
 func (t *tx) runSupersede(old journal.Journal, plan *manifestPlan) error {
