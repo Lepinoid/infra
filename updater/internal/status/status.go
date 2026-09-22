@@ -3,10 +3,10 @@ package status
 import (
 	"encoding/json"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
-	"github.com/lepinoid/infra/updater/internal/gate"
 	"github.com/lepinoid/infra/updater/internal/journal"
 )
 
@@ -82,7 +82,11 @@ type Startup struct {
 }
 
 func (s Status) Healthy(want Startup, now time.Time) bool {
-	return s.SchemaVersion == 1 && want.PodUID != "" && want.PodUID != want.PreviousPodUID && s.ServerInstanceID == want.PodUID && !s.ProcessStartedAt.Before(want.RequestedAt) && !s.ProcessStartedAt.After(now.Add(2*time.Second)) && gate.Fresh(now, s.UpdatedAt) && s.Phase == "HEALTHY" && s.PluginVersion == want.Manifest.Version && s.PluginCommitSHA == want.Manifest.PluginCommitSHA && s.Multiverse.Compatible && s.Multiverse.Detected != nil && *s.Multiverse.Detected == want.Manifest.MultiverseVersion && s.Multiverse.Expected == want.Manifest.MultiverseVersion
+	// UpdaterStatusManager writes on events, not on a heartbeat. Process and
+	// Pod identity bind this observation to the requested restart; a live
+	// monitor is checked by the caller. Gate acknowledgments retain freshness.
+	validTimes := !want.RequestedAt.IsZero() && !s.ProcessStartedAt.IsZero() && !s.UpdatedAt.IsZero() && !s.ProcessStartedAt.Before(want.RequestedAt) && !s.UpdatedAt.Before(s.ProcessStartedAt) && !s.ProcessStartedAt.After(now.Add(2*time.Second)) && !s.UpdatedAt.After(now.Add(2*time.Second))
+	return validTimes && s.SchemaVersion == 1 && s.StatusSequence >= 0 && want.PodUID != "" && want.PreviousPodUID != "" && want.PodUID != want.PreviousPodUID && s.ServerInstanceID == want.PodUID && s.Phase == "HEALTHY" && s.PluginVersion == want.Manifest.Version && s.PluginCommitSHA == want.Manifest.PluginCommitSHA && slices.Contains(want.Manifest.SupportedMinecraft, s.MinecraftVersion) && s.Multiverse.Compatible && s.Multiverse.Detected != nil && *s.Multiverse.Detected == want.Manifest.MultiverseVersion && s.Multiverse.Expected == want.Manifest.MultiverseVersion
 }
 
 var checkpoint = regexp.MustCompile(`^operationId=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$`)

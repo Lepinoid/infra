@@ -3,6 +3,8 @@ package status
 import (
 	"testing"
 	"time"
+
+	"github.com/lepinoid/infra/updater/internal/journal"
 )
 
 func TestCompatibilityUnknown(t *testing.T) {
@@ -43,5 +45,47 @@ func TestParseMonitor(t *testing.T) {
 	invalid := []byte(`{"server_info":{"version":{"name":"unknown","protocol":772}}}`)
 	if got := ParseMonitor(invalid); got.Valid {
 		t.Fatalf("invalid should not parse: %+v", got)
+	}
+}
+
+func TestStartupEventStatusRemainsHealthyWithValidIdentity(t *testing.T) {
+	now := time.Date(2026, 9, 23, 0, 0, 0, 0, time.UTC)
+	version := "5.8.1"
+	base := Status{SchemaVersion: 1, ServerInstanceID: "new", ProcessStartedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-time.Hour + time.Second), Phase: "HEALTHY", PluginVersion: "bundle", PluginCommitSHA: "commit", MinecraftVersion: "1.21.8", Multiverse: Multiverse{Detected: &version, Expected: version, Compatible: true}}
+	want := Startup{PodUID: "new", PreviousPodUID: "old", RequestedAt: now.Add(-time.Hour - time.Minute), Manifest: journal.Manifest{Version: "bundle", PluginCommitSHA: "commit", MultiverseVersion: version, SupportedMinecraft: []string{"1.21.8"}}}
+	if !base.Healthy(want, now) {
+		t.Fatal("event-driven health incorrectly expired")
+	}
+	for _, tc := range []struct {
+		name   string
+		change func(*Status, *Startup)
+	}{
+		{"zero updated", func(s *Status, _ *Startup) { s.UpdatedAt = time.Time{} }},
+		{"zero started", func(s *Status, _ *Startup) { s.ProcessStartedAt = time.Time{} }},
+		{"zero requested", func(_ *Status, w *Startup) { w.RequestedAt = time.Time{} }},
+		{"updated before process", func(s *Status, _ *Startup) { s.UpdatedAt = s.ProcessStartedAt.Add(-time.Second) }},
+		{"future updated", func(s *Status, _ *Startup) { s.UpdatedAt = now.Add(3 * time.Second) }},
+		{"future process", func(s *Status, _ *Startup) {
+			s.ProcessStartedAt = now.Add(3 * time.Second)
+			s.UpdatedAt = s.ProcessStartedAt
+		}},
+		{"process before request", func(s *Status, w *Startup) { s.ProcessStartedAt = w.RequestedAt.Add(-time.Second) }},
+		{"old pod", func(s *Status, w *Startup) { s.ServerInstanceID = w.PreviousPodUID }},
+		{"same previous", func(_ *Status, w *Startup) { w.PreviousPodUID = w.PodUID }},
+		{"missing previous", func(_ *Status, w *Startup) { w.PreviousPodUID = "" }},
+		{"unsupported minecraft", func(s *Status, _ *Startup) { s.MinecraftVersion = "1.21.9" }},
+		{"negative sequence", func(s *Status, _ *Startup) { s.StatusSequence = -1 }},
+		{"version mismatch", func(s *Status, _ *Startup) { s.PluginVersion = "other" }},
+		{"commit mismatch", func(s *Status, _ *Startup) { s.PluginCommitSHA = "other" }},
+		{"multiverse mismatch", func(s *Status, _ *Startup) { s.Multiverse.Expected = "other" }},
+		{"unhealthy", func(s *Status, _ *Startup) { s.Phase = "UNHEALTHY" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, w := base, want
+			tc.change(&s, &w)
+			if s.Healthy(w, now) {
+				t.Fatal("invalid startup accepted")
+			}
+		})
 	}
 }

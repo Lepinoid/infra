@@ -20,7 +20,6 @@ import (
 	"github.com/lepinoid/infra/updater/internal/journal"
 	"github.com/lepinoid/infra/updater/internal/lease"
 	"github.com/lepinoid/infra/updater/internal/players"
-	"github.com/lepinoid/infra/updater/internal/status"
 	updaterengine "github.com/lepinoid/infra/updater/internal/updater"
 )
 
@@ -56,7 +55,22 @@ var (
 
 func ptr[T any](v T) *T { return &v }
 
-func (t *tx) saveJournal() error { return t.engine.Save(t.ctx) }
+func (t *tx) saveJournal() error {
+	t.engine.Journal = t.j
+	return t.engine.Save(t.ctx)
+}
+
+var errSuspended = errors.New("transaction suspended")
+
+func (t *tx) suspend(reason string) error {
+	t.engine.Journal = t.j
+	err := t.engine.Suspend(t.ctx, reason)
+	t.j = t.engine.Journal
+	if err != nil {
+		return err
+	}
+	return errSuspended
+}
 
 func (t *tx) api(fn func(context.Context) error) error {
 	bounded, cancel := context.WithTimeout(t.ctx, 30*time.Second)
@@ -96,11 +110,6 @@ func (t *tx) rcon(args ...string) (string, error) {
 		return err
 	})
 	return out, err
-}
-
-func (t *tx) mcMonitor() (string, error) {
-	out, err := t.commands.Run(t.ctx, nil, "mc-monitor", "status", "--host", "localhost", "--port", "25565")
-	return string(bytes.TrimSpace(out)), err
 }
 
 func whitelistCommand(t *tx) updaterengine.WhitelistCommand {
@@ -280,7 +289,7 @@ func (t *tx) a3Drift(plan *manifestPlan) error {
 		Target:            sourcePairFromManifest(plan.Desired),
 		StagingPath:       filepath.Join("staging", plan.Desired.Digest),
 		BackupPath:        filepath.Join("backup", plan.Current.Digest),
-		CommitCandidate:   ptr("TARGET"),
+		CommitCandidate:   nil,
 		FencingGeneration: plan.ObservedGeneration,
 	}
 	t.engine.Journal = t.j
@@ -402,7 +411,9 @@ func (t *tx) a5GateClosed() error {
 }
 
 func (t *tx) a6Probe() error {
-	return t.engine.ProbeRuntime(t.ctx, whitelistCommand(t))
+	err := t.engine.ProbeRuntime(t.ctx, whitelistCommand(t))
+	t.j = t.engine.Journal
+	return err
 }
 
 func (t *tx) observePlayers() (players.State, error) {
@@ -419,7 +430,7 @@ func (t *tx) b3EmptyPlayers() error {
 	var zeroSince time.Time
 	for {
 		if !t.now().Before(deadline) {
-			return t.engine.Suspend(t.ctx, "checkpoint-timeout")
+			return t.suspend("checkpoint-timeout")
 		}
 		state, err := t.observePlayers()
 		if err != nil {
@@ -427,7 +438,7 @@ func (t *tx) b3EmptyPlayers() error {
 		}
 		switch state {
 		case players.Unknown:
-			return t.engine.Suspend(t.ctx, "player-count-unknown")
+			return t.suspend("player-count-unknown")
 		case players.NonZero:
 			zeroSince = time.Time{}
 		case players.Zero:
@@ -446,33 +457,6 @@ func (t *tx) b3EmptyPlayers() error {
 	}
 }
 
-func (t *tx) b4Checkpoint() error {
-	deadline := t.now().Add(60 * time.Second)
-	for {
-		if !t.now().Before(deadline) {
-			return t.engine.Suspend(t.ctx, "checkpoint-timeout")
-		}
-		out, err := t.rcon("lepinoidtools", "updater", "checkpoint")
-		if err != nil {
-			return err
-		}
-		id, reason := status.Checkpoint(out)
-		if id != "" {
-			return nil
-		}
-		switch reason {
-		case "checkpoint-busy", "checkpoint-unavailable":
-			select {
-			case <-t.ctx.Done():
-				return t.ctx.Err()
-			case <-time.After(5 * time.Second):
-			}
-		default:
-			return t.engine.Suspend(t.ctx, reason)
-		}
-	}
-}
-
 func (t *tx) b5Backup(plan *manifestPlan) error {
 	dir := t.store.Path("backup", plan.Current.Digest)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -481,7 +465,7 @@ func (t *tx) b5Backup(plan *manifestPlan) error {
 	metadata := journal.Metadata{SchemaVersion: 1, Digest: plan.Current.Digest, Pair: sourcePairFromManifest(plan.Current.Manifest)}
 	metadata.BackedUpAt = ptr(t.now().UTC())
 	for _, jar := range []journal.Jar{metadata.Pair.Tools, metadata.Pair.Multiverse} {
-		data, err := os.ReadFile(filepath.Join(pluginsDir, jar.Name))
+		data, err := os.ReadFile(filepath.Join(filepath.Dir(t.store.Root), jar.Name))
 		if err != nil {
 			return err
 		}
@@ -489,7 +473,7 @@ func (t *tx) b5Backup(plan *manifestPlan) error {
 			return err
 		}
 	}
-	whitelist := filepath.Join("/data", "whitelist.json")
+	whitelist := t.dataPath("whitelist.json")
 	if data, err := os.ReadFile(whitelist); err == nil {
 		if err := fsutil.Write(filepath.Join(dir, "whitelist.json"), data); err != nil {
 			return err
@@ -513,7 +497,7 @@ func (t *tx) recordWhitelistSnapshot() error {
 	if m.PersistedEnabled != nil {
 		return nil
 	}
-	whitelist := filepath.Join("/data", "whitelist.json")
+	whitelist := t.dataPath("whitelist.json")
 	if data, err := os.ReadFile(whitelist); err == nil {
 		m.WhitelistBackup = ptr(base64.StdEncoding.EncodeToString(data))
 		sum, err := fsutil.SHA256(whitelist)
@@ -527,7 +511,7 @@ func (t *tx) recordWhitelistSnapshot() error {
 	} else {
 		return err
 	}
-	persisted, err := readPersistedWhitelist("/data/server.properties")
+	persisted, err := readPersistedWhitelist(t.dataPath("server.properties"))
 	if err != nil {
 		return err
 	}
@@ -620,150 +604,64 @@ func (t *tx) b7AnnotateRestart(plan *manifestPlan) error {
 	return nil
 }
 
-type podList struct {
-	Items []struct {
-		Metadata struct {
-			Name string `json:"name"`
-			UID  string `json:"uid"`
-		} `json:"metadata"`
-		Status struct {
-			Phase      string `json:"phase"`
-			Containers []struct {
-				Ready bool `json:"ready"`
-			} `json:"containerStatuses"`
-		} `json:"status"`
-	} `json:"items"`
-}
-
-func rolloutObservation(list *podList) string {
-	if len(list.Items) == 0 {
-		return "no build-server pods listed"
-	}
-	var parts []string
-	for _, pod := range list.Items {
-		ready := 0
-		for _, c := range pod.Status.Containers {
-			if c.Ready {
-				ready++
-			}
-		}
-		parts = append(parts, fmt.Sprintf("%s(uid=%s phase=%s ready=%d/%d)", pod.Metadata.Name, pod.Metadata.UID, pod.Status.Phase, ready, len(pod.Status.Containers)))
-	}
-	return strings.Join(parts, ", ")
-}
-
-func (t *tx) b8Rollout() error {
-	deadline := t.now().Add(10 * time.Minute)
-	var last string
-	for t.now().Before(deadline) {
-		var list podList
-		err := t.api(func(ctx context.Context) error {
-			data, err := t.commands.Kubectl(ctx, nil, "get", "pods", "-l", "app=build-server", "-o", "json")
-			if err != nil {
-				return err
-			}
-			return json.Unmarshal(data, &list)
-		})
-		if err != nil {
-			last = "pod list unreadable: " + err.Error()
-			t.engine.Journal = t.j
-			return t.engine.Suspend(t.ctx, "api-unavailable")
-		}
-		last = rolloutObservation(&list)
-		for _, pod := range list.Items {
-			if pod.Metadata.UID == t.podUID || pod.Status.Phase != "Running" {
-				continue
-			}
-			ready := len(pod.Status.Containers) > 0
-			for _, c := range pod.Status.Containers {
-				ready = ready && c.Ready
-			}
-			if ready {
-				t.j.ReplacementPodUID = ptr(pod.Metadata.UID)
-				t.j.ExpectedPodUID = pod.Metadata.UID
-				t.engine.Journal = t.j
-				return t.saveJournal()
-			}
-		}
-		select {
-		case <-t.ctx.Done():
-			return t.ctx.Err()
-		case <-time.After(10 * time.Second):
-		}
-	}
-	fmt.Fprintf(os.Stderr, "updater: rollout watch timed out: want a Ready Running pod other than uid %q; last observed: %s\n", t.podUID, last)
-	t.engine.Journal = t.j
-	return t.engine.Suspend(t.ctx, "checkpoint-timeout")
-}
-
-func (t *tx) b9Healthy(plan *manifestPlan) error {
-	deadline := t.now().Add(10 * time.Minute)
-	var lastStatus, lastMonitor string
-	for t.now().Before(deadline) {
-		var s status.Status
-		readErr := t.api(func(ctx context.Context) error {
-			data, err := t.commands.Exec(ctx, cluster.Pod{Name: t.podName, UID: t.j.ExpectedPodUID}, "updater", "cat", "/data/plugins/LepinoidTools/updater-status.json")
-			if err != nil {
-				data, err = t.commands.Exec(ctx, cluster.Pod{Name: t.podName, UID: t.j.ExpectedPodUID}, "minecraft", "cat", "/data/plugins/LepinoidTools/updater-status.json")
-				if err != nil {
-					return err
-				}
-			}
-			lastStatus = strings.TrimSpace(string(data))
-			return json.Unmarshal(bytes.TrimSpace(data), &s)
-		})
-		if readErr != nil {
-			lastStatus = "updater-status unreadable: " + readErr.Error()
-		} else if monitor, err := t.mcMonitor(); err != nil {
-			lastMonitor = "mc-monitor unreadable: " + err.Error()
-		} else {
-			lastMonitor = monitor
-			m := status.ParseMonitor([]byte(monitor))
-			if m.Valid && s.Healthy(status.Startup{PodUID: t.j.ExpectedPodUID, PreviousPodUID: t.podUID, RequestedAt: *t.j.RestartRequestedAt, Manifest: plan.Desired}, t.now()) {
-				return nil
-			}
-		}
-		select {
-		case <-t.ctx.Done():
-			return t.ctx.Err()
-		case <-time.After(15 * time.Second):
-		}
-	}
-	fmt.Fprintf(os.Stderr, "updater: startup health wait timed out: want updater-status Healthy for podUID=%q previousPodUID=%q manifest=%s with valid mc-monitor; last updater-status: %s; last mc-monitor: %s\n", t.j.ExpectedPodUID, t.podUID, plan.Desired.Digest, lastStatus, lastMonitor)
-	t.engine.Journal = t.j
-	return t.engine.Suspend(t.ctx, "sidecar-unavailable")
-}
-
 func (t *tx) b11GC() error {
-	gc := updaterengine.GCPlan{Protected: []string{t.j.SourceDigest, t.j.TargetDigest}}
+	protected := []string{t.j.SourceDigest, t.j.TargetDigest}
+	if t.plan != nil {
+		protected = append(protected, t.plan.Desired.Digest, t.plan.Current.Digest)
+	}
+	current, err := journal.Read[journal.Current](t.store.Path("current"))
+	if err != nil {
+		return err
+	}
+	protected = append(protected, current.Digest)
 	for _, section := range []string{"staging", "backup"} {
+		gc := updaterengine.GCPlan{}
+		for _, digest := range protected {
+			gc.Protected = append(gc.Protected, section+"/"+digest)
+		}
 		entries, err := os.ReadDir(t.store.Path(section))
 		if err != nil {
 			return err
 		}
 		for _, entry := range entries {
-			if entry.IsDir() {
-				gc.Generations = append(gc.Generations, updaterengine.Generation{Digest: section + "/" + entry.Name()})
+			// In particular, the pinned backup/gate is not a bundle generation.
+			if !entry.IsDir() || !sha256DigestPattern.MatchString(entry.Name()) {
+				continue
 			}
+			info, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			gc.Generations = append(gc.Generations, updaterengine.Generation{Digest: section + "/" + entry.Name(), CreatedAt: info.ModTime()})
+		}
+		if err := gc.Run(t.ctx, func(ctx context.Context) error { return t.engine.Fence.Check(ctx, t.j) }, func(path string) error { return os.RemoveAll(t.store.Path(path)) }); err != nil {
+			return err
 		}
 	}
-	return gc.Run(t.ctx, func(ctx context.Context) error { return t.engine.Fence.Check(ctx, t.j) }, func(path string) error {
-		return os.RemoveAll(t.store.Path(path))
-	})
+	return nil
 }
 
 func (t *tx) recoverEntry(j journal.Journal) error {
 	t.j = j
 	t.engine.Journal = j
-	if err := t.refreshFenceOnResume(); err != nil {
+	if j.Phase == "RESTART_REQUESTED" || j.Phase == "VERIFYING" {
+		if err := t.b8Rollout(); err != nil {
+			if errors.Is(err, errSuspended) {
+				return nil
+			}
+			return err
+		}
+	} else if err := t.refreshFenceOnResume(); err != nil {
 		return err
 	}
 	if err := t.reactivateSuspended(); err != nil {
 		return err
 	}
 	switch j.Phase {
-	case "ACCESS_RESTORE_COMPLETE", "ROLLBACK_RESTART_REQUESTED":
-		return nil
+	case "ACCESS_RESTORE_COMPLETE":
+		return t.finalizeSuccess()
+	case "ROLLBACK_RESTART_REQUESTED":
+		return errors.New("rollback restart requires recovery")
 	default:
 		return t.runActive()
 	}
@@ -875,13 +773,29 @@ func (t *tx) reactivateSuspended() error {
 	return t.saveJournal()
 }
 
+func canSupersede(j journal.Journal) bool {
+	return !j.MaintenanceRequired && j.AccessState == "OPEN" &&
+		(j.Phase == "PREPARING" || j.Phase == "DRIFT_DETECTED" || j.Phase == "STAGED")
+}
+
 func (t *tx) runSupersede(old journal.Journal, plan *manifestPlan) error {
+	if !canSupersede(old) {
+		return errors.New("cannot supersede a transaction after maintenance begins")
+	}
+	t.j, t.engine.Journal = old, old
+	if err := t.refreshFenceOnResume(); err != nil {
+		return err
+	}
+	old = t.j
 	aborted := "ABORTED"
 	old.Lifecycle = "TERMINAL"
-	old.Outcome = &aborted
+	old.Outcome, old.SuspendReason = &aborted, nil
 	t.j = old
 	t.engine.Journal = old
 	if err := t.saveJournal(); err != nil {
+		return err
+	}
+	if err := t.finalizeTerminal(); err != nil {
 		return err
 	}
 	t.j = journal.Journal{}
@@ -905,7 +819,7 @@ func (t *tx) runTransactionActive(plan *manifestPlan) error {
 			Target:            sourcePairFromManifest(plan.Desired),
 			StagingPath:       filepath.Join("staging", plan.Desired.Digest),
 			BackupPath:        filepath.Join("backup", plan.Current.Digest),
-			CommitCandidate:   ptr("TARGET"),
+			CommitCandidate:   nil,
 			FencingGeneration: plan.ObservedGeneration,
 		}
 		t.engine.Journal = t.j
@@ -988,17 +902,9 @@ func (t *tx) runActive() error {
 		}},
 		{"BACKUP_COMPLETE", func() error {
 			t.j.Phase = "INSTALL_STARTED"
-			t.engine.Journal = t.j
-			if err := t.saveJournal(); err != nil {
-				return err
-			}
-			if err := t.b6Install(plan); err != nil {
-				return err
-			}
-			t.j.Phase = "INSTALL_COMPLETE"
-			t.engine.Journal = t.j
 			return t.saveJournal()
 		}},
+		{"INSTALL_STARTED", func() error { return t.resumeStartedInstall(plan) }},
 		{"INSTALL_COMPLETE", func() error {
 			if err := t.b7AnnotateRestart(plan); err != nil {
 				return err
@@ -1030,21 +936,16 @@ func (t *tx) runActive() error {
 			continue
 		}
 		if err := s.run(); err != nil {
+			if errors.Is(err, errSuspended) {
+				return nil
+			}
 			return err
 		}
 		if t.j.Lifecycle == "SUSPENDED" {
 			return nil
 		}
 	}
-	outcome := "SUCCEEDED"
-	t.j.Lifecycle = "TERMINAL"
-	t.j.Outcome = &outcome
-	t.j.Phase = "ACCESS_RESTORE_COMPLETE"
-	t.engine.Journal = t.j
-	if err := t.saveJournal(); err != nil {
-		return err
-	}
-	return t.b11GC()
+	return t.finalizeSuccess()
 }
 
 func order(phase string) int {
@@ -1054,43 +955,6 @@ func order(phase string) int {
 		}
 	}
 	return len(journal.Phases)
-}
-
-func (t *tx) openAccess() error {
-	t.j.Phase = "ACCESS_RESTORE_STARTED"
-	t.engine.Journal = t.j
-	if err := t.saveJournal(); err != nil {
-		return err
-	}
-	restore := func(ctx context.Context) error {
-		target := t.j.Candidate()
-		for _, jar := range []journal.Jar{target.Tools, target.Multiverse} {
-			if err := fsutil.VerifyJar(filepath.Join(pluginsDir, jar.Name), jar.SHA256); err != nil {
-				return err
-			}
-		}
-		if t.j.Maintenance.WhitelistBackup != nil && t.j.Maintenance.WhitelistExisted != nil && *t.j.Maintenance.WhitelistExisted {
-			data, err := base64.StdEncoding.DecodeString(*t.j.Maintenance.WhitelistBackup)
-			if err != nil {
-				return err
-			}
-			if err := fsutil.Write("/data/whitelist.json", data); err != nil {
-				return err
-			}
-		}
-		if t.j.Maintenance.PersistedEnabled != nil {
-			if err := writePersistedWhitelist("/data/server.properties", *t.j.Maintenance.PersistedEnabled); err != nil {
-				return err
-			}
-		}
-		if t.j.Maintenance.RuntimeEnabled != nil && *t.j.Maintenance.RuntimeEnabled {
-			if _, err := t.rcon("whitelist", "on"); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	return t.engine.Open(t.ctx, restore)
 }
 
 func readPersistedWhitelist(path string) (bool, error) {
@@ -1187,6 +1051,12 @@ func runTransaction(ctx context.Context, lock *lease.Lease) error {
 	if err != nil {
 		return err
 	}
+	for _, j := range inv.Journals {
+		if j.Lifecycle == "TERMINAL" {
+			t.j, t.engine.Journal = j, j
+			return t.resumeTerminal()
+		}
+	}
 	plan, err := t.a2Manifest()
 	if err != nil {
 		return err
@@ -1196,7 +1066,11 @@ func runTransaction(ctx context.Context, lock *lease.Lease) error {
 		if inv.Journals[i].Lifecycle == "TERMINAL" {
 			continue
 		}
-		if inv.Journals[i].TargetDigest == plan.Desired.Digest {
+		if inv.Journals[i].TargetDigest == plan.Desired.Digest || !canSupersede(inv.Journals[i]) {
+			// Once maintenance starts, finish the immutable target snapshot.
+			// A newer ConfigMap is applied by the next transaction.
+			plan.Desired = inv.Journals[i].TargetManifest
+			plan.DesiredResourceVersion = plan.Desired.ConfigMapResourceVersion
 			t.engine.Journal = inv.Journals[i]
 			return t.recoverEntry(inv.Journals[i])
 		}
