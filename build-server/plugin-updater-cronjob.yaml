@@ -40,7 +40,7 @@ spec:
                     path: config.json
           containers:
             - name: updater
-              image: ghcr.io/lepinoid/plugin-updater:26.09.22-d0e23@sha256:1c82ebe06645c1edb56999066fc9aa59a7db5daf34844f16835d00fd0cacf50f
+              image: ghcr.io/lepinoid/plugin-updater:26.09.22-97da6@sha256:d7ab8293533f9eff0db1b31ab074a193d4cdf53d801804e07e23110954403218
               imagePullPolicy: IfNotPresent
               args: ["run"]
               env:
