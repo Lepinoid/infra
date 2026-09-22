@@ -32,6 +32,12 @@ spec:
             - name: data
               persistentVolumeClaim:
                 claimName: build-server-data
+            - name: ghcr-docker-config
+              secret:
+                secretName: ghcr-pull-secret
+                items:
+                  - key: .dockerconfigjson
+                    path: config.json
           containers:
             - name: updater
               image: ghcr.io/lepinoid/plugin-updater:26.09.22-7bc14@sha256:869987372a39fb25fb5451788128879ecad35866afe1ac2f35d3374b898312f7
@@ -42,9 +48,14 @@ spec:
                   valueFrom:
                     fieldRef:
                       fieldPath: metadata.uid
+                - name: DOCKER_CONFIG
+                  value: /etc/ghcr
               volumeMounts:
                 - name: data
                   mountPath: /data
+                - name: ghcr-docker-config
+                  mountPath: /etc/ghcr
+                  readOnly: true
               resources:
                 requests:
                   cpu: 20m

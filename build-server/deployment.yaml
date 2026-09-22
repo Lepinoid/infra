@@ -79,9 +79,14 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.uid
+            - name: DOCKER_CONFIG
+              value: /etc/ghcr
           volumeMounts:
             - name: data
               mountPath: /data
+            - name: ghcr-docker-config
+              mountPath: /etc/ghcr
+              readOnly: true
           resources:
             requests:
               cpu: 5m
@@ -186,9 +191,14 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.uid
+            - name: DOCKER_CONFIG
+              value: /etc/ghcr
           volumeMounts:
             - name: data
               mountPath: /data
+            - name: ghcr-docker-config
+              mountPath: /etc/ghcr
+              readOnly: true
           resources:
             requests:
               cpu: 5m
@@ -209,3 +219,9 @@ spec:
         - name: lepinoid-tools-config
           secret:
             secretName: lepinoid-tools-config
+        - name: ghcr-docker-config
+          secret:
+            secretName: ghcr-pull-secret
+            items:
+              - key: .dockerconfigjson
+                path: config.json
