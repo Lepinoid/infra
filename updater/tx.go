@@ -604,7 +604,7 @@ func (t *tx) b7AnnotateRestart(plan *manifestPlan) error {
 		if err != nil {
 			return err
 		}
-		_, err = t.commands.Kubectl(ctx, nil, "patch", "deployment", "build-server", "--type=strategic", "-p", string(patch))
+		_, err = t.commands.Kubectl(ctx, nil, "patch", "deployment", "build-server", "--type=strategic", "--field-manager="+cluster.FieldManager, "-p", string(patch))
 		return err
 	}); err != nil {
 		return err
