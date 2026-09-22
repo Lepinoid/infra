@@ -50,6 +50,7 @@ type manifestPlan struct {
 var (
 	errNoChange       = errors.New("no updater work required")
 	errAPIUnavailable = errors.New("api-unavailable")
+	errRCONPassword   = errors.New("rcon-password-unknown")
 )
 
 func ptr[T any](v T) *T { return &v }
@@ -60,15 +61,36 @@ func (t *tx) api(fn func(context.Context) error) error {
 	bounded, cancel := context.WithTimeout(t.ctx, 30*time.Second)
 	defer cancel()
 	if err := fn(bounded); err != nil {
-		return fmt.Errorf("%w: %v", errAPIUnavailable, err)
+		return fmt.Errorf("%w: %w", errAPIUnavailable, err)
 	}
 	return nil
+}
+
+// rconPassword は実行時の正本である /data/server.properties から rcon.password を
+// 取得する。.rcon-cli.env は現行 minecraft イメージの静的 rcon-cli から参照されず
+// 実パスワードと乖離し得るため (infra#36 往復3)、毎回読み直す。
+func (t *tx) rconPassword(ctx context.Context) (string, error) {
+	out, err := t.commands.Exec(ctx, cluster.Pod{Name: t.podName, UID: t.podUID}, "minecraft", "sh", "-c", "sed -n 's/^rcon.password=//p' /data/server.properties")
+	if err != nil {
+		return "", fmt.Errorf("%w: reading rcon.password from /data/server.properties: %v", errRCONPassword, err)
+	}
+	password, _, _ := strings.Cut(string(out), "\n")
+	password = strings.TrimSpace(password)
+	if password == "" {
+		return "", fmt.Errorf("%w: rcon.password not found in /data/server.properties", errRCONPassword)
+	}
+	return password, nil
 }
 
 func (t *tx) rcon(args ...string) (string, error) {
 	var out string
 	err := t.api(func(ctx context.Context) error {
-		body, err := t.commands.Exec(ctx, cluster.Pod{Name: t.podName, UID: t.podUID}, "minecraft", append([]string{"rcon-cli"}, args...)...)
+		password, err := t.rconPassword(ctx)
+		if err != nil {
+			return err
+		}
+		// セキュリティ補足: パスワードは argv に載るがクラスタ内部の kubectl exec 限定で外部露出しない。
+		body, err := t.commands.Exec(ctx, cluster.Pod{Name: t.podName, UID: t.podUID}, "minecraft", append([]string{"rcon-cli", "--password", password}, args...)...)
 		out = string(bytes.TrimSpace(body))
 		return err
 	})
@@ -84,7 +106,11 @@ func whitelistCommand(t *tx) updaterengine.WhitelistCommand {
 	return func(ctx context.Context, sub string) (string, error) {
 		bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
-		out, err := t.commands.Exec(bounded, cluster.Pod{Name: t.podName, UID: t.podUID}, "minecraft", "rcon-cli", "whitelist", sub)
+		password, err := t.rconPassword(bounded)
+		if err != nil {
+			return "", err
+		}
+		out, err := t.commands.Exec(bounded, cluster.Pod{Name: t.podName, UID: t.podUID}, "minecraft", "rcon-cli", "--password", password, "whitelist", sub)
 		if err != nil {
 			return "", err
 		}
