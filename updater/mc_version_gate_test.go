@@ -107,7 +107,7 @@ func TestMCVersionGate(t *testing.T) {
 					fetchReached = true
 					return nil, errors.New("stop at staging boundary")
 				}
-				monitorArgs := []string{"exec", x.podName, "-c", "minecraft", "--", "mc-monitor", "status", "--host", "localhost", "--port", "25565", "--format", "json"}
+				monitorArgs := []string{"exec", x.podName, "-c", "minecraft", "--", "mc-monitor", "status", "--host", "localhost", "--port", "25565", "-json"}
 				if name == "kubectl" && slices.Equal(args, monitorArgs) {
 					if tc.monitorError {
 						return nil, errors.New("monitor exited 1")

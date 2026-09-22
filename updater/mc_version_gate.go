@@ -14,7 +14,7 @@ func (t *tx) mcMonitorJSON() (string, error) {
 	var out []byte
 	err := t.api(func(ctx context.Context) error {
 		var err error
-		out, err = t.commands.Exec(ctx, cluster.Pod{Name: t.podName, UID: t.podUID}, "minecraft", "mc-monitor", "status", "--host", "localhost", "--port", "25565", "--format", "json")
+		out, err = t.commands.Exec(ctx, cluster.Pod{Name: t.podName, UID: t.podUID}, "minecraft", "mc-monitor", "status", "--host", "localhost", "--port", "25565", "-json")
 		return err
 	})
 	return string(bytes.TrimSpace(out)), err
