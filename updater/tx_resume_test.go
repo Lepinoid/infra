@@ -157,3 +157,114 @@ func TestResumeSuspendsWhenClosureUnverifiable(t *testing.T) {
 		})
 	}
 }
+
+// Given: a maintenance journal whose closure is broken on multiple legs at once
+// When: resume verification runs
+// Then: the error enumerates every failed leg (flag, ack, jars) instead of stopping at the first
+func TestVerifyClosureReportsAllFailedLegs(t *testing.T) {
+	x := staleResumeFixture(t, true)
+	original := verifyInstalledPair
+	defer func() { verifyInstalledPair = original }()
+	verifyInstalledPair = func(journal.Pair) error { return errors.New("sha256 mismatch") }
+
+	err := x.refreshFenceOnResume()
+	if err == nil {
+		t.Fatal("expected closure verification failure")
+	}
+	for _, leg := range []string{"maintenance.flag", "commitCandidate=TARGET"} {
+		if !strings.Contains(err.Error(), leg) {
+			t.Fatalf("error %q lacks failed leg %q", err, leg)
+		}
+	}
+}
+
+// Given: a journal suspended with closure-verification-failed whose fence values now match live
+// When: it is resumed while the closure is still broken
+// Then: verification runs again (fence match alone must not unlock progress)
+func TestResumeReverifiesSuspendedClosureFailure(t *testing.T) {
+	x := gateTransaction(t)
+	x.j.Phase = "MAINTENANCE_ACTIVE"
+	x.j.AccessState = "CLOSED"
+	x.j.MaintenanceRequired = true
+	if err := x.j.Suspend("closure-verification-failed"); err != nil {
+		t.Fatal(err)
+	}
+	x.engine.Journal = x.j
+	if err := x.saveJournal(); err != nil {
+		t.Fatal(err)
+	}
+
+	err := x.refreshFenceOnResume()
+	if err == nil || !strings.Contains(err.Error(), "closure verification failed") {
+		t.Fatalf("expected re-verification failure, got %v", err)
+	}
+	persisted, rerr := journal.Read[journal.Journal](x.store.Path("journal", x.j.TransactionID))
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if persisted.Lifecycle != "SUSPENDED" {
+		t.Fatalf("journal must stay suspended: %+v", persisted)
+	}
+}
+
+// Given: a suspended journal whose resume preconditions are now satisfied
+// When: the resume is confirmed
+// Then: lifecycle and suspendReason are cleared atomically with that save
+func TestReactivateSuspendedClearsResidue(t *testing.T) {
+	x := gateTransaction(t)
+	if err := x.j.Suspend("player-count-unknown"); err != nil {
+		t.Fatal(err)
+	}
+	x.engine.Journal = x.j
+	if err := x.saveJournal(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := x.reactivateSuspended(); err != nil {
+		t.Fatal(err)
+	}
+	persisted, err := journal.Read[journal.Journal](x.store.Path("journal", x.j.TransactionID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.Lifecycle != "ACTIVE" || persisted.SuspendReason != nil {
+		t.Fatalf("suspension residue remains: %+v", persisted)
+	}
+	if err := persisted.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if x.j.Lifecycle != "ACTIVE" || x.engine.Journal.Lifecycle != "ACTIVE" {
+		t.Fatalf("in-memory journals not reactivated: %+v / %+v", x.j.Lifecycle, x.engine.Journal.Lifecycle)
+	}
+}
+
+// Given: a rollout watch that timed out
+// When: the last observation is rendered
+// Then: every listed pod appears with uid, phase and readiness
+func TestRolloutObservationContent(t *testing.T) {
+	var list podList
+	if got := rolloutObservation(&list); !strings.Contains(got, "no build-server pods") {
+		t.Fatalf("empty list: %q", got)
+	}
+	list.Items = append(list.Items, struct {
+		Metadata struct {
+			Name string `json:"name"`
+			UID  string `json:"uid"`
+		} `json:"metadata"`
+		Status struct {
+			Phase      string `json:"phase"`
+			Containers []struct {
+				Ready bool `json:"ready"`
+			} `json:"containerStatuses"`
+		} `json:"status"`
+	}{})
+	list.Items[0].Metadata.Name = "build-server-x"
+	list.Items[0].Metadata.UID = "uid-x"
+	list.Items[0].Status.Phase = "Pending"
+	got := rolloutObservation(&list)
+	for _, want := range []string{"build-server-x", "uid-x", "Pending", "0/0"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("observation %q lacks %q", got, want)
+		}
+	}
+}
