@@ -71,7 +71,7 @@ func dispatch(ctx context.Context, args []string, input io.Reader, output io.Wri
 		if len(args) != 1 || os.Getenv("POD_UID") == "" {
 			return errUsage
 		}
-		r := recovery.Runner{Store: journal.Store{Root: root}, Data: "/data", PodUID: os.Getenv("POD_UID"), Now: time.Now}
+		r := recovery.Runner{Store: journal.Store{Root: root}, Data: "/data", PodUID: os.Getenv("POD_UID"), Now: time.Now, Log: os.Stderr}
 		return r.Run()
 	case "ready-check":
 		if len(args) != 1 || os.Getenv("POD_UID") == "" {

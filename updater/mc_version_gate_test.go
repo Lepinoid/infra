@@ -103,7 +103,8 @@ func TestMCVersionGate(t *testing.T) {
 			var calls []runnerCall
 			fetchReached := false
 			x.commands = fakeRunner{calls: &calls, reply: func(name string, args []string) ([]byte, error) {
-				if name == "oras" && slices.Equal(args, []string{"blob", "fetch", x.plan.Desired.OCIRepository + "@" + x.plan.Desired.Digest, "--output", "-"}) {
+				ref := x.plan.Desired.OCIRepository + "@" + x.plan.Desired.Digest
+				if name == "oras" && slices.Equal(args, []string{"manifest", "fetch", ref, "--descriptor"}) {
 					fetchReached = true
 					return nil, errors.New("stop at staging boundary")
 				}
