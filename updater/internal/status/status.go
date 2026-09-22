@@ -55,10 +55,13 @@ func ParseMonitor(data []byte) Monitor {
 		return Monitor{}
 	}
 	version := wire.ServerInfo.Version.Name
-	if !regexp.MustCompile(`^[0-9]+\.[0-9]+(?:\.[0-9]+)?$`).MatchString(version) {
+	// mc-monitor は現在の itzg イメージでは version.name に "Paper 1.21.8" のように
+	// 実装名を前置して返すため、末尾の x.y(.z) を抜き出して比較対象にする。
+	m := regexp.MustCompile(`([0-9]+\.[0-9]+(?:\.[0-9]+)?)\s*$`).FindStringSubmatch(version)
+	if m == nil {
 		return Monitor{}
 	}
-	return Monitor{version, true}
+	return Monitor{m[1], true}
 }
 
 func (s Status) Minecraft(m Monitor, pod string, now time.Time) string {

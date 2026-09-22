@@ -29,3 +29,19 @@ func TestCheckpoint(t *testing.T) {
 		}
 	}
 }
+
+func TestParseMonitor(t *testing.T) {
+	paper := []byte(`{"server_info":{"version":{"name":"Paper 1.21.8","protocol":772}}}`)
+	got := ParseMonitor(paper)
+	if !got.Valid || got.Version != "1.21.8" {
+		t.Fatalf("paper-prefixed: %+v", got)
+	}
+	legacy := []byte(`{"server_info":{"version":{"name":"1.21.8","protocol":772}}}`)
+	if got := ParseMonitor(legacy); !got.Valid || got.Version != "1.21.8" {
+		t.Fatalf("legacy: %+v", got)
+	}
+	invalid := []byte(`{"server_info":{"version":{"name":"unknown","protocol":772}}}`)
+	if got := ParseMonitor(invalid); got.Valid {
+		t.Fatalf("invalid should not parse: %+v", got)
+	}
+}
