@@ -39,20 +39,29 @@ func (r Runner) Run() error {
 		}
 	}
 	if state.Blocked {
-		return ErrUnrecoverable
+		blocks, _ := os.ReadDir(r.Store.Path("journal", ".blocking"))
+		names := make([]string, 0, len(blocks))
+		for _, entry := range blocks {
+			names = append(names, entry.Name())
+		}
+		return fmt.Errorf("%w: store blocked: journal/.blocking entries %v (operator hold)", ErrUnrecoverable, names)
 	}
 	if len(state.Journals) > 1 {
-		return ErrUnrecoverable
+		ids := make([]string, 0, len(state.Journals))
+		for _, j := range state.Journals {
+			ids = append(ids, j.TransactionID)
+		}
+		return fmt.Errorf("%w: multiple journals present (%d): transactionIds=%v", ErrUnrecoverable, len(state.Journals), ids)
 	}
 	if len(state.Journals) == 0 {
 		if state.Flag != nil {
-			return ErrUnrecoverable
+			return fmt.Errorf("%w: maintenance.flag present (transactionId=%s journalPath=%s) but the journal is missing", ErrUnrecoverable, state.Flag.TransactionID, state.Flag.JournalPath)
 		}
 		current, err := journal.Read[journal.Current](r.Store.Path("current"))
 		if err != nil {
 			return err
 		}
-		return r.verifyPair(journal.Pair{Tools: journal.Jar{Name: "LepinoidTools.jar", SHA256: current.ToolsSHA}, Multiverse: journal.Jar{Name: "Multiverse-Core.jar", SHA256: current.MultiverseSHA}})
+		return r.verifyPair(journal.Pair{Tools: journal.Jar{Name: "LepinoidTools.jar", SHA256: current.ToolsSHA}, Multiverse: journal.Jar{Name: "Multiverse-Core.jar", SHA256: current.MultiverseSHA}}, "current manifest pair")
 	}
 	return r.Repair(state.Journals[0])
 }
@@ -112,17 +121,27 @@ func (r Runner) quarantineEmptyJournals(inspectErr error) (journal.Inventory, er
 	return state, nil
 }
 
-func (r Runner) verifyPair(pair journal.Pair) error {
+func candidateBasis(j journal.Journal) string {
+	label := "SOURCE"
+	if j.CommitCandidate != nil {
+		label = *j.CommitCandidate
+	}
+	return fmt.Sprintf("journal %s candidate pair (commitCandidate=%s)", j.TransactionID, label)
+}
+
+// verifyPair は plugins/ 上の実 jar チェックサムを pair と照合する。不一致時は
+// jar 名・期待値・実測値・期待の根拠（basis）を含む init-unrecoverable を返す。
+func (r Runner) verifyPair(pair journal.Pair, basis string) error {
 	for _, jar := range []journal.Jar{pair.Tools, pair.Multiverse} {
 		if jar.Name != "LepinoidTools.jar" && jar.Name != "Multiverse-Core.jar" {
-			return ErrUnrecoverable
+			return fmt.Errorf("%w: unexpected jar name %q in %s", ErrUnrecoverable, jar.Name, basis)
 		}
 		hash, err := fsutil.SHA256(filepath.Join(r.Data, "plugins", jar.Name))
 		if err != nil {
-			return err
+			return fmt.Errorf("cannot checksum %s for %s: %w", jar.Name, basis, err)
 		}
 		if hash != jar.SHA256 {
-			return ErrUnrecoverable
+			return fmt.Errorf("%w: %s checksum mismatch against %s: expected %s, actual %s", ErrUnrecoverable, jar.Name, basis, jar.SHA256, hash)
 		}
 	}
 	return nil
@@ -145,17 +164,41 @@ func (r Runner) Repair(j journal.Journal) (result error) {
 		return flagErr
 	}
 	if flagErr == nil && (flag.TransactionID != j.TransactionID || flag.JournalPath != "journal/"+j.TransactionID) {
-		return ErrUnrecoverable
+		return fmt.Errorf("%w: maintenance.flag mismatch: flag(transactionId=%s journalPath=%s) does not reference journal %s", ErrUnrecoverable, flag.TransactionID, flag.JournalPath, j.TransactionID)
 	}
 	pair := j.Candidate()
 	if j.Phase == "ACCESS_RESTORE_COMPLETE" {
 		if j.CommitCandidate == nil || flagErr == nil {
-			return ErrUnrecoverable
+			return fmt.Errorf("%w: ACCESS_RESTORE_COMPLETE journal %s has invalid state (commitCandidate=%v, maintenance.flag present=%v); expected commitCandidate set and no flag", ErrUnrecoverable, j.TransactionID, j.CommitCandidate, flagErr == nil)
 		}
-		return r.verifyPair(pair)
+		return r.verifyPair(pair, candidateBasis(j))
 	}
+	// jar 未変異 journal（PREPARING/DRIFT_DETECTED/STAGED: maintenance 不要かつ
+	// flag 無し）の起動許可ルール。回帰記録 (infra#36 往復2): PREPARING journal は
+	// commitCandidate=TARGET で作られるため、旧実装は SOURCE 世代の実 jar を
+	// TARGET pair で照合して init-unrecoverable で起動を止めていた。実 jar が
+	// SOURCE（= current manifest の世代）と一致するなら起動を許可し journal は
+	// 残して cronjob の中断回復に委ねる。SOURCE にも Candidate にも一致しない
+	// 場合のみ init-unrecoverable。
 	if !j.MaintenanceRequired && flagErr != nil {
-		return r.verifyPair(pair)
+		sourceBasis := fmt.Sprintf("journal %s SOURCE pair", j.TransactionID)
+		sourceErr := r.verifyPair(j.Source, sourceBasis)
+		if sourceErr == nil {
+			if r.Log != nil {
+				fmt.Fprintf(r.Log, "init-recover: jars match SOURCE pair of pre-mutation journal %s (phase=%s); leaving journal for the cronjob transaction to resume\n", j.TransactionID, j.Phase)
+			}
+			return nil
+		}
+		if pair == j.Source {
+			return fmt.Errorf("%w: jars do not match %s: %v", ErrUnrecoverable, sourceBasis, sourceErr)
+		}
+		if err := r.verifyPair(pair, candidateBasis(j)); err != nil {
+			return fmt.Errorf("%w: jars match neither SOURCE nor candidate pair (source: %v; candidate: %v)", ErrUnrecoverable, sourceErr, err)
+		}
+		if r.Log != nil {
+			fmt.Fprintf(r.Log, "init-recover: jars match candidate pair of pre-mutation journal %s (phase=%s); leaving journal for the cronjob transaction to resume\n", j.TransactionID, j.Phase)
+		}
+		return nil
 	}
 	before, err := Whitelist(filepath.Join(r.Data, "server.properties"))
 	if err != nil {
@@ -200,13 +243,13 @@ func (r Runner) Repair(j journal.Journal) (result error) {
 		return err
 	}
 	if gate.File != "lepinoid-tools-gate.jar" {
-		return ErrUnrecoverable
+		return fmt.Errorf("%w: gate-manifest.json file is %q, expected lepinoid-tools-gate.jar", ErrUnrecoverable, gate.File)
 	}
 	if err := r.restoreJar(journal.Jar{Name: gate.File, SHA256: gate.SHA256}, r.Store.Path("backup/gate")); err != nil {
 		return err
 	}
 	if j.Maintenance.PersistedEnabled == nil {
-		return ErrUnrecoverable
+		return fmt.Errorf("%w: journal %s maintenance.persistedWhitelistEnabled is missing; whitelist state unknown", ErrUnrecoverable, j.TransactionID)
 	}
 	if before != *j.Maintenance.PersistedEnabled {
 		inherited := false
@@ -236,12 +279,12 @@ func (r Runner) Repair(j journal.Journal) (result error) {
 			return err
 		}
 	}
-	return r.verifyPair(pair)
+	return r.verifyPair(pair, candidateBasis(j))
 }
 
 func (r Runner) restoreJar(jar journal.Jar, backup string) error {
 	if jar.Name != "LepinoidTools.jar" && jar.Name != "Multiverse-Core.jar" && jar.Name != "lepinoid-tools-gate.jar" {
-		return ErrUnrecoverable
+		return fmt.Errorf("%w: restore target %q is not a permitted jar name", ErrUnrecoverable, jar.Name)
 	}
 	path := filepath.Join(r.Data, "plugins", jar.Name)
 	if hash, err := fsutil.SHA256(path); err == nil && hash == jar.SHA256 {
@@ -253,7 +296,7 @@ func (r Runner) restoreJar(jar journal.Jar, backup string) error {
 		return err
 	}
 	if hash != jar.SHA256 {
-		return ErrUnrecoverable
+		return fmt.Errorf("%w: backup of %s (%s) checksum mismatch: expected %s, actual %s", ErrUnrecoverable, jar.Name, source, jar.SHA256, hash)
 	}
 	data, err := os.ReadFile(source)
 	if err != nil {
