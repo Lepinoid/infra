@@ -52,7 +52,7 @@ func TestMCVersionGate(t *testing.T) {
 		{name: "supported", version: "1.21.8"},
 		{name: "unsupported", version: "1.21.1", reason: "mc-version-mismatch"},
 		{name: "disagreement", version: "1.21.1", monitor: "1.21.8", reason: "mc-version-unknown"},
-		{name: "stale", version: "1.21.8", stale: true, reason: "mc-version-unknown"},
+		{name: "stale", version: "1.21.8", stale: true},
 		{name: "instance mismatch", version: "1.21.8", wrongPod: true, reason: "mc-version-unknown"},
 		{name: "monitor exit", version: "1.21.8", monitorError: true, reason: "mc-version-unknown"},
 		{name: "monitor invalid JSON", version: "1.21.8", monitor: "invalid", reason: "mc-version-unknown"},
@@ -63,7 +63,7 @@ func TestMCVersionGate(t *testing.T) {
 		{name: "resume mismatch", version: "1.21.8", resume: "mc-version-mismatch"},
 		{name: "resume unknown", version: "1.21.8", resume: "mc-version-unknown"},
 		{name: "still mismatch", version: "1.21.1", resume: "mc-version-mismatch", reason: "mc-version-mismatch"},
-		{name: "still unknown", version: "1.21.8", stale: true, resume: "mc-version-unknown", reason: "mc-version-unknown"},
+		{name: "stale resumes after monitor fix", version: "1.21.8", stale: true, resume: "mc-version-unknown"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Given: a real journal store and read-only server observations.

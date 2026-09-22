@@ -13,7 +13,7 @@ func TestCompatibilityUnknown(t *testing.T) {
 		ok      bool
 		age     time.Duration
 		want    string
-	}{{"1.21.1", true, 0, "1.21.1"}, {"1.21.2", true, 0, ""}, {"1.21.1", false, 0, ""}, {"1.21.1", true, 7 * time.Second, ""}} {
+	}{{"1.21.1", true, 0, "1.21.1"}, {"1.21.2", true, 0, ""}, {"1.21.1", false, 0, ""}, {"1.21.1", true, 7 * time.Second, "1.21.1"}} {
 		s.UpdatedAt = now.Add(-tc.age)
 		if got := s.Minecraft(Monitor{Version: tc.version, Valid: tc.ok}, "pod", now); got != tc.want {
 			t.Fatal(got)

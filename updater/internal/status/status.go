@@ -65,7 +65,10 @@ func ParseMonitor(data []byte) Monitor {
 }
 
 func (s Status) Minecraft(m Monitor, pod string, now time.Time) string {
-	if s.SchemaVersion != 1 || !m.Valid || s.MinecraftVersion == "" || s.MinecraftVersion != m.Version || s.ServerInstanceID != pod || !gate.Fresh(now, s.UpdatedAt) {
+	// 鮮度（updatedAt の再近接）は要求しない: プラグイン側の UpdaterStatusManager は
+	// イベント駆動で heartbeat を持たず、起動后はファイルが古いだけで実態は alive のため。
+	// サーバーが死んでいる場合は monitor 応答が取れず monitor 側で失格する。
+	if s.SchemaVersion != 1 || !m.Valid || s.MinecraftVersion == "" || s.MinecraftVersion != m.Version || s.ServerInstanceID != pod {
 		return ""
 	}
 	return m.Version
