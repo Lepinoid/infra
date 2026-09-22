@@ -4,8 +4,6 @@ metadata:
   name: plugin-updater
 spec:
   schedule: "*/5 * * * *"
-  # PREPARING で停止する updater 障害の一時緩和（Lepinoid/infra#36 の修復完了まで suspend。解除依存: 同 issue）
-  suspend: true
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -42,7 +40,7 @@ spec:
                     path: config.json
           containers:
             - name: updater
-              image: ghcr.io/lepinoid/plugin-updater:26.09.22-7bc14@sha256:869987372a39fb25fb5451788128879ecad35866afe1ac2f35d3374b898312f7
+              image: ghcr.io/lepinoid/plugin-updater:26.09.22-d0e23@sha256:1c82ebe06645c1edb56999066fc9aa59a7db5daf34844f16835d00fd0cacf50f
               imagePullPolicy: IfNotPresent
               args: ["run"]
               env:
