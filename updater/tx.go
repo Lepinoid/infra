@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -283,21 +284,80 @@ func (t *tx) a4Stage(plan *manifestPlan) error {
 			return err
 		}
 	}
-	var blob []byte
-	if err := t.api(func(ctx context.Context) error {
-		data, err := t.commands.Run(ctx, nil, "oras", "blob", "fetch", plan.Desired.OCIRepository+"@"+plan.Desired.Digest, "--output", "-")
-		if err != nil {
-			return err
-		}
-		blob = data
-		return nil
-	}); err != nil {
+	blob, err := t.fetchBundleBlob(plan)
+	if err != nil {
 		return err
 	}
 	if err := artifact.Extract(bytes.NewReader(blob), dir); err != nil {
 		return err
 	}
 	return artifact.Verify(dir, plan.Desired)
+}
+
+var sha256DigestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+
+// fetchBundleBlob は pin 済み manifest digest から OCI manifest を解決し、
+// 単一の非圧縮 tar layer の blob digest で bundle を取得する。
+// 回帰記録 (infra#36): 旧実装は `oras blob fetch <repo>@<manifest digest>` を
+// 発行し続け、GHCR が manifest 参照での blob fetch を 404 で拒否するため
+// PREPARING で停止していた。manifest は descriptor digest で照合してから
+// layer を選ぶ。
+func (t *tx) fetchBundleBlob(plan *manifestPlan) ([]byte, error) {
+	repository := plan.Desired.OCIRepository
+	ref := repository + "@" + plan.Desired.Digest
+	var descriptor struct {
+		MediaType string `json:"mediaType"`
+		Digest    string `json:"digest"`
+	}
+	if err := t.api(func(ctx context.Context) error {
+		out, err := t.commands.Run(ctx, nil, "oras", "manifest", "fetch", ref, "--descriptor")
+		if err != nil {
+			return err
+		}
+		return json.Unmarshal(bytes.TrimSpace(out), &descriptor)
+	}); err != nil {
+		return nil, err
+	}
+	if descriptor.Digest != plan.Desired.Digest {
+		return nil, fmt.Errorf("%w: manifest descriptor digest %q != desired %q", artifact.ErrArtifact, descriptor.Digest, plan.Desired.Digest)
+	}
+	var manifest struct {
+		Layers []struct {
+			MediaType string `json:"mediaType"`
+			Digest    string `json:"digest"`
+		} `json:"layers"`
+	}
+	if err := t.api(func(ctx context.Context) error {
+		out, err := t.commands.Run(ctx, nil, "oras", "manifest", "fetch", ref, "--output", "-")
+		if err != nil {
+			return err
+		}
+		return json.Unmarshal(bytes.TrimSpace(out), &manifest)
+	}); err != nil {
+		return nil, err
+	}
+	if len(manifest.Layers) != 1 {
+		return nil, fmt.Errorf("%w: bundle manifest must have exactly one layer, got %d", artifact.ErrArtifact, len(manifest.Layers))
+	}
+	layer := manifest.Layers[0]
+	if layer.MediaType != "application/vnd.oci.image.layer.v1.tar" {
+		return nil, fmt.Errorf("%w: unsupported layer media type %q (uncompressed tar required)", artifact.ErrArtifact, layer.MediaType)
+	}
+	if !sha256DigestPattern.MatchString(layer.Digest) {
+		return nil, fmt.Errorf("%w: invalid layer digest %q", artifact.ErrArtifact, layer.Digest)
+	}
+	var blob []byte
+	if err := t.api(func(ctx context.Context) error {
+		data, err := t.commands.Run(ctx, nil, "oras", "blob", "fetch", repository+"@"+layer.Digest, "--output", "-")
+		if err != nil {
+			return err
+		}
+		blob = data
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return blob, nil
 }
 
 func (t *tx) a5GateClosed() error {

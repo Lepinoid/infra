@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -80,18 +81,23 @@ func (s Store) Inspect() (Inventory, error) {
 			continue
 		}
 		if entry.IsDir() {
-			return state, ErrSchema
+			return state, fmt.Errorf("journal/%s: %w", entry.Name(), ErrSchema)
+		}
+		// fsutil の原子的書き込み残骸（.atomic-*）や quarantine 隔離物は
+		// transaction 記録ではないため inventory の対象外とする。
+		if strings.HasPrefix(entry.Name(), ".") {
+			continue
 		}
 		if strings.HasSuffix(entry.Name(), ".probe") {
 			probe, err := Read[Probe](s.Path("journal", entry.Name()))
 			if err != nil {
-				return state, err
+				return state, fmt.Errorf("journal/%s: %w", entry.Name(), err)
 			}
 			if err := probe.Validate(); err != nil {
-				return state, err
+				return state, fmt.Errorf("journal/%s: %w", entry.Name(), err)
 			}
 			if probe.TransactionID+".probe" != entry.Name() {
-				return state, ErrSchema
+				return state, fmt.Errorf("journal/%s: %w", entry.Name(), ErrSchema)
 			}
 			state.Probes = append(state.Probes, probe)
 			if probe.RuntimeBefore == nil {
@@ -101,13 +107,13 @@ func (s Store) Inspect() (Inventory, error) {
 		}
 		j, err := Read[Journal](s.Path("journal", entry.Name()))
 		if err != nil {
-			return state, err
+			return state, fmt.Errorf("journal/%s: %w", entry.Name(), err)
 		}
 		if err := j.Validate(); err != nil {
-			return state, err
+			return state, fmt.Errorf("journal/%s: %w", entry.Name(), err)
 		}
 		if j.TransactionID != entry.Name() {
-			return state, ErrSchema
+			return state, fmt.Errorf("journal/%s: %w", entry.Name(), ErrSchema)
 		}
 		state.Journals = append(state.Journals, j)
 		if j.Outcome != nil && *j.Outcome == "FAILED_MANUAL_INTERVENTION" && j.Resolution == nil {

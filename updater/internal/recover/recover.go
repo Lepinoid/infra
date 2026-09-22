@@ -3,6 +3,7 @@ package recover
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -25,12 +26,17 @@ type Runner struct {
 	Data   string
 	PodUID string
 	Now    func() time.Time
+	// Log は隔離診断の出力先。nil の場合は破棄する。
+	Log io.Writer
 }
 
 func (r Runner) Run() error {
 	state, err := r.Store.Inspect()
 	if err != nil {
-		return err
+		state, err = r.quarantineEmptyJournals(err)
+		if err != nil {
+			return err
+		}
 	}
 	if state.Blocked {
 		return ErrUnrecoverable
@@ -49,6 +55,61 @@ func (r Runner) Run() error {
 		return r.verifyPair(journal.Pair{Tools: journal.Jar{Name: "LepinoidTools.jar", SHA256: current.ToolsSHA}, Multiverse: journal.Jar{Name: "Multiverse-Core.jar", SHA256: current.MultiverseSHA}})
 	}
 	return r.Repair(state.Journals[0])
+}
+
+// quarantineEmptyJournals は Inspect 失敗時の安全側復旧ルールを実行する。
+// 0 バイト journal は過去の非原子的クラッシュ残骸（内容が一切無く復旧材料を
+// 持たない）とみなし、journal/quarantine/ へ隔離したうえで再 Inspect する。
+// 0 バイト以外の不正エントリは内容が残っているため自動隔離は危険であり、
+// ファイル名入りの診断を伴う init-unrecoverable で人手判断へ委ねる。
+func (r Runner) quarantineEmptyJournals(inspectErr error) (journal.Inventory, error) {
+	var state journal.Inventory
+	entries, err := os.ReadDir(r.Store.Path("journal"))
+	if errors.Is(err, os.ErrNotExist) {
+		return state, fmt.Errorf("%w: %v", ErrUnrecoverable, inspectErr)
+	}
+	if err != nil {
+		return state, fmt.Errorf("%w: %v", ErrUnrecoverable, errors.Join(err, inspectErr))
+	}
+	moved := 0
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return state, fmt.Errorf("%w: journal/%s: %v", ErrUnrecoverable, entry.Name(), err)
+		}
+		if info.Size() != 0 {
+			continue
+		}
+		quarantine := r.Store.Path("quarantine")
+		if err := os.MkdirAll(quarantine, 0755); err != nil {
+			return state, fmt.Errorf("%w: %v", ErrUnrecoverable, err)
+		}
+		dst := filepath.Join(quarantine, fmt.Sprintf("%s.quarantine-%d", entry.Name(), r.Now().UnixNano()))
+		for i := 0; ; i++ {
+			if _, err := os.Lstat(dst); errors.Is(err, os.ErrNotExist) {
+				break
+			}
+			dst = filepath.Join(quarantine, fmt.Sprintf("%s.quarantine-%d-%d", entry.Name(), r.Now().UnixNano(), i+1))
+		}
+		if err := os.Rename(r.Store.Path("journal", entry.Name()), dst); err != nil {
+			return state, fmt.Errorf("%w: %v", ErrUnrecoverable, err)
+		}
+		if err := errors.Join(fsutil.SyncDir(quarantine), fsutil.SyncDir(r.Store.Path("journal"))); err != nil {
+			return state, fmt.Errorf("%w: %v", ErrUnrecoverable, err)
+		}
+		if r.Log != nil {
+			fmt.Fprintf(r.Log, "init-recover: quarantined zero-byte journal journal/%s to quarantine/%s (content-free crash residue)\n", entry.Name(), filepath.Base(dst))
+		}
+		moved++
+	}
+	state, err = r.Store.Inspect()
+	if err != nil {
+		return journal.Inventory{}, fmt.Errorf("%w: %v (after quarantining %d zero-byte entries)", ErrUnrecoverable, err, moved)
+	}
+	return state, nil
 }
 
 func (r Runner) verifyPair(pair journal.Pair) error {
