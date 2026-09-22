@@ -4,6 +4,8 @@ metadata:
   name: plugin-updater
 spec:
   schedule: "*/5 * * * *"
+  # PREPARING で停止する updater 障害の一時緩和（Lepinoid/infra#36 の修復完了まで suspend。解除依存: 同 issue）
+  suspend: true
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
