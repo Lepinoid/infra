@@ -71,7 +71,7 @@ spec:
               memory: 32Mi
         # updater init recovery: maintenance 中断・jar 破損からの自動回復を minecraft 起動前に実施
         - name: plugin-updater-init
-          image: ghcr.io/lepinoid/plugin-updater:26.09.22-1472b@sha256:738336f90aa28b81bf0f252d249f012fbabf939832a4f5ee2ead0fdecad1a707
+          image: ghcr.io/lepinoid/plugin-updater:26.09.22-7bc14@sha256:869987372a39fb25fb5451788128879ecad35866afe1ac2f35d3374b898312f7
           imagePullPolicy: IfNotPresent
           args: ["init-recover"]
           env:
@@ -177,7 +177,7 @@ spec:
               memory: 14Gi
         # updater sidecar: kubectl cp 用 tar + updater CLI (CronJob 経由で run を実行)
         - name: updater
-          image: ghcr.io/lepinoid/plugin-updater:26.09.22-1472b@sha256:738336f90aa28b81bf0f252d249f012fbabf939832a4f5ee2ead0fdecad1a707
+          image: ghcr.io/lepinoid/plugin-updater:26.09.22-7bc14@sha256:869987372a39fb25fb5451788128879ecad35866afe1ac2f35d3374b898312f7
           imagePullPolicy: IfNotPresent
           args: ["sleep", "infinity"]
           command: ["/bin/busybox"]
