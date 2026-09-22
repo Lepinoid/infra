@@ -620,23 +620,43 @@ func (t *tx) b7AnnotateRestart(plan *manifestPlan) error {
 	return nil
 }
 
+type podList struct {
+	Items []struct {
+		Metadata struct {
+			Name string `json:"name"`
+			UID  string `json:"uid"`
+		} `json:"metadata"`
+		Status struct {
+			Phase      string `json:"phase"`
+			Containers []struct {
+				Ready bool `json:"ready"`
+			} `json:"containerStatuses"`
+		} `json:"status"`
+	} `json:"items"`
+}
+
+func rolloutObservation(list *podList) string {
+	if len(list.Items) == 0 {
+		return "no build-server pods listed"
+	}
+	var parts []string
+	for _, pod := range list.Items {
+		ready := 0
+		for _, c := range pod.Status.Containers {
+			if c.Ready {
+				ready++
+			}
+		}
+		parts = append(parts, fmt.Sprintf("%s(uid=%s phase=%s ready=%d/%d)", pod.Metadata.Name, pod.Metadata.UID, pod.Status.Phase, ready, len(pod.Status.Containers)))
+	}
+	return strings.Join(parts, ", ")
+}
+
 func (t *tx) b8Rollout() error {
 	deadline := t.now().Add(10 * time.Minute)
+	var last string
 	for t.now().Before(deadline) {
-		var list struct {
-			Items []struct {
-				Metadata struct {
-					Name string `json:"name"`
-					UID  string `json:"uid"`
-				} `json:"metadata"`
-				Status struct {
-					Phase      string `json:"phase"`
-					Containers []struct {
-						Ready bool `json:"ready"`
-					} `json:"containerStatuses"`
-				} `json:"status"`
-			} `json:"items"`
-		}
+		var list podList
 		err := t.api(func(ctx context.Context) error {
 			data, err := t.commands.Kubectl(ctx, nil, "get", "pods", "-l", "app=build-server", "-o", "json")
 			if err != nil {
@@ -645,9 +665,11 @@ func (t *tx) b8Rollout() error {
 			return json.Unmarshal(data, &list)
 		})
 		if err != nil {
+			last = "pod list unreadable: " + err.Error()
 			t.engine.Journal = t.j
 			return t.engine.Suspend(t.ctx, "api-unavailable")
 		}
+		last = rolloutObservation(&list)
 		for _, pod := range list.Items {
 			if pod.Metadata.UID == t.podUID || pod.Status.Phase != "Running" {
 				continue
@@ -669,12 +691,14 @@ func (t *tx) b8Rollout() error {
 		case <-time.After(10 * time.Second):
 		}
 	}
+	fmt.Fprintf(os.Stderr, "updater: rollout watch timed out: want a Ready Running pod other than uid %q; last observed: %s\n", t.podUID, last)
 	t.engine.Journal = t.j
 	return t.engine.Suspend(t.ctx, "checkpoint-timeout")
 }
 
 func (t *tx) b9Healthy(plan *manifestPlan) error {
 	deadline := t.now().Add(10 * time.Minute)
+	var lastStatus, lastMonitor string
 	for t.now().Before(deadline) {
 		var s status.Status
 		readErr := t.api(func(ctx context.Context) error {
@@ -685,14 +709,18 @@ func (t *tx) b9Healthy(plan *manifestPlan) error {
 					return err
 				}
 			}
+			lastStatus = strings.TrimSpace(string(data))
 			return json.Unmarshal(bytes.TrimSpace(data), &s)
 		})
-		if readErr == nil {
-			if monitor, err := t.mcMonitor(); err == nil {
-				m := status.ParseMonitor([]byte(monitor))
-				if m.Valid && s.Healthy(status.Startup{PodUID: t.j.ExpectedPodUID, PreviousPodUID: t.podUID, RequestedAt: *t.j.RestartRequestedAt, Manifest: plan.Desired}, t.now()) {
-					return nil
-				}
+		if readErr != nil {
+			lastStatus = "updater-status unreadable: " + readErr.Error()
+		} else if monitor, err := t.mcMonitor(); err != nil {
+			lastMonitor = "mc-monitor unreadable: " + err.Error()
+		} else {
+			lastMonitor = monitor
+			m := status.ParseMonitor([]byte(monitor))
+			if m.Valid && s.Healthy(status.Startup{PodUID: t.j.ExpectedPodUID, PreviousPodUID: t.podUID, RequestedAt: *t.j.RestartRequestedAt, Manifest: plan.Desired}, t.now()) {
+				return nil
 			}
 		}
 		select {
@@ -701,6 +729,7 @@ func (t *tx) b9Healthy(plan *manifestPlan) error {
 		case <-time.After(15 * time.Second):
 		}
 	}
+	fmt.Fprintf(os.Stderr, "updater: startup health wait timed out: want updater-status Healthy for podUID=%q previousPodUID=%q manifest=%s with valid mc-monitor; last updater-status: %s; last mc-monitor: %s\n", t.j.ExpectedPodUID, t.podUID, plan.Desired.Digest, lastStatus, lastMonitor)
 	t.engine.Journal = t.j
 	return t.engine.Suspend(t.ctx, "sidecar-unavailable")
 }
@@ -729,6 +758,9 @@ func (t *tx) recoverEntry(j journal.Journal) error {
 	if err := t.refreshFenceOnResume(); err != nil {
 		return err
 	}
+	if err := t.reactivateSuspended(); err != nil {
+		return err
+	}
 	switch j.Phase {
 	case "ACCESS_RESTORE_COMPLETE", "ROLLBACK_RESTART_REQUESTED":
 		return nil
@@ -752,23 +784,32 @@ func (t *tx) refreshFenceOnResume() error {
 	if err != nil {
 		return err
 	}
-	if observed.PodUID == t.j.ExpectedPodUID && observed.Generation == t.j.FencingGeneration {
-		return nil
-	}
+	stale := observed.PodUID != t.j.ExpectedPodUID || observed.Generation != t.j.FencingGeneration
 	if !t.j.MaintenanceRequired {
+		if !stale {
+			return nil
+		}
 		return t.refreshFence(observed, false)
 	}
-	if err := t.verifyClosureIntact(observed); err != nil {
-		if serr := t.j.Suspend("closure-verification-failed"); serr != nil {
-			return errors.Join(fmt.Errorf("closure verification failed: %w", err), serr)
+	// closure-verification-failed で止まった journal は、フェンス値が一致していても
+	// 閉鎖検証を必ずやり直す（前回不通のまま進行を許可しないため）。
+	mustVerify := stale || (t.j.SuspendReason != nil && *t.j.SuspendReason == "closure-verification-failed")
+	if mustVerify {
+		if err := t.verifyClosureIntact(observed); err != nil {
+			if serr := t.j.Suspend("closure-verification-failed"); serr != nil {
+				return errors.Join(fmt.Errorf("closure verification failed: %w", err), serr)
+			}
+			t.engine.Journal = t.j
+			// フェンス不一致が確定している状況では engine.Save 自体が fenced となるため、
+			// mutation 権放棄の記録（suspend）のみフェンス検査を迂回して永続化する。
+			if werr := journal.Save(t.store.Path("journal", t.j.TransactionID), t.j); werr != nil {
+				return errors.Join(fmt.Errorf("closure verification failed: %w", err), werr)
+			}
+			return fmt.Errorf("closure verification failed: %w", err)
 		}
-		t.engine.Journal = t.j
-		// フェンス不一致が確定している状況では engine.Save 自体が fenced となるため、
-		// mutation 権放棄の記録（suspend）のみフェンス検査を迂回して永続化する。
-		if werr := journal.Save(t.store.Path("journal", t.j.TransactionID), t.j); werr != nil {
-			return errors.Join(fmt.Errorf("closure verification failed: %w", err), werr)
-		}
-		return fmt.Errorf("closure verification failed: %w", err)
+	}
+	if !stale {
+		return nil
 	}
 	return t.refreshFence(observed, true)
 }
@@ -785,31 +826,53 @@ func (t *tx) refreshFence(observed updaterengine.Observation, syncFlag bool) err
 // verifyClosureIntact は maintenance 中 journal の再開時に「閉鎖が壊れていない」こと
 // だけを確認する: maintenance.flag がこの txn のもの、gate-status が flag に基づく
 // identity で ACTIVE かつ fresh、インストール済み jar が commitCandidate 世代の
-// pair と一致する。一通りでも壊れていれば refresh は許可しない。
+// pair と一致する。不通条件は全件列挙して返し（先頭不一致で打ち切らない）、
+// resume 関数へは決して戻らない（suspend 側への分岐は呼び出し元の責務）。
 func (t *tx) verifyClosureIntact(observed updaterengine.Observation) error {
+	var failures []string
 	flag, err := journal.Read[journal.Flag](t.store.Path("maintenance.flag"))
-	if err != nil {
-		return fmt.Errorf("maintenance.flag unreadable: %w", err)
-	}
-	if flag.TransactionID != t.j.TransactionID {
-		return fmt.Errorf("maintenance.flag belongs to transaction %q, not %q", flag.TransactionID, t.j.TransactionID)
-	}
-	status, err := journal.Read[gate.Status](t.store.Path("gate-status.json"))
-	if err != nil {
-		return fmt.Errorf("gate-status.json unreadable: %w", err)
-	}
-	id := gate.Identity{PodUID: observed.PodUID, TransactionID: t.j.TransactionID, Generation: flag.FencingGeneration}
-	if !status.Active(id, t.now()) {
-		return fmt.Errorf("gate-status.json: no fresh ACTIVE ack for pod %q at flag generation %d", observed.PodUID, flag.FencingGeneration)
+	switch {
+	case err != nil:
+		failures = append(failures, fmt.Sprintf("maintenance.flag unreadable: %v", err))
+	case flag.TransactionID != t.j.TransactionID:
+		failures = append(failures, fmt.Sprintf("maintenance.flag belongs to transaction %q, not %q", flag.TransactionID, t.j.TransactionID))
+	default:
+		status, serr := journal.Read[gate.Status](t.store.Path("gate-status.json"))
+		switch {
+		case serr != nil:
+			failures = append(failures, fmt.Sprintf("gate-status.json unreadable: %v", serr))
+		default:
+			id := gate.Identity{PodUID: observed.PodUID, TransactionID: t.j.TransactionID, Generation: flag.FencingGeneration}
+			if !status.Active(id, t.now()) {
+				failures = append(failures, fmt.Sprintf("gate-status.json: no fresh ACTIVE ack for pod %q at flag generation %d (phase=%q serverInstanceId=%q updatedAt=%s)", observed.PodUID, flag.FencingGeneration, status.Phase, status.ServerInstanceID, status.UpdatedAt))
+			}
+		}
 	}
 	candidate := "SOURCE"
 	if t.j.CommitCandidate != nil {
 		candidate = *t.j.CommitCandidate
 	}
-	if err := verifyInstalledPair(t.j.Candidate()); err != nil {
-		return fmt.Errorf("commitCandidate=%s: %w", candidate, err)
+	if verr := verifyInstalledPair(t.j.Candidate()); verr != nil {
+		failures = append(failures, fmt.Sprintf("commitCandidate=%s jars mismatch: %v", candidate, verr))
+	}
+	if len(failures) > 0 {
+		return errors.New("closure not intact: " + strings.Join(failures, "; "))
 	}
 	return nil
+}
+
+// reactivateSuspended は resume が成立（フェンス整合・閉鎖検証通過）した時点で
+// suspend 残留を原子的に解消する。この1回の journal 保存で ACTIVE 確定まで
+// 行わないと、phase だけが進んで SUSPENDED + suspendReason が残存する。
+func (t *tx) reactivateSuspended() error {
+	if t.j.Lifecycle != "SUSPENDED" {
+		return nil
+	}
+	if err := t.j.Resume(); err != nil {
+		return err
+	}
+	t.engine.Journal = t.j
+	return t.saveJournal()
 }
 
 func (t *tx) runSupersede(old journal.Journal, plan *manifestPlan) error {
@@ -1119,7 +1182,7 @@ func runTransaction(ctx context.Context, lock *lease.Lease) error {
 			return updaterengine.Observation{PodUID: t.podUID, Generation: generation, Blocked: inv.Blocked}, nil
 		},
 	}
-	t.engine = &updaterengine.Engine{Store: store, Fence: fence, Now: time.Now}
+	t.engine = &updaterengine.Engine{Store: store, Fence: fence, Now: time.Now, Log: os.Stderr}
 	inv, err := t.a1Inventory()
 	if err != nil {
 		return err

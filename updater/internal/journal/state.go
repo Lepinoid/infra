@@ -91,6 +91,15 @@ func (j *Journal) Suspend(reason string) error {
 	return nil
 }
 
+func (j *Journal) Resume() error {
+	if j.Lifecycle != "SUSPENDED" {
+		return fmt.Errorf("%w: resume requires SUSPENDED lifecycle", ErrSchema)
+	}
+	j.Lifecycle = "ACTIVE"
+	j.SuspendReason = nil
+	return nil
+}
+
 func (j Journal) Candidate() Pair {
 	if j.CommitCandidate != nil && *j.CommitCandidate == "TARGET" {
 		return j.Target

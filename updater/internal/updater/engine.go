@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -18,6 +19,7 @@ type Engine struct {
 	Journal journal.Journal
 	Fence   Fence
 	Now     func() time.Time
+	Log     io.Writer
 }
 
 func (e *Engine) Save(ctx context.Context) error {
@@ -93,17 +95,42 @@ func (e *Engine) WaitGate(ctx context.Context, active bool) error {
 	defer cancel()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+	var lastStatus *gate.Status
+	var lastErr error
 	for {
 		s, err := journal.Read[gate.Status](e.Store.Path("gate-status.json"))
-		if err == nil && ((active && s.Active(e.identity(), e.Now())) || (!active && s.Inactive(e.identity(), e.Now()))) {
-			return nil
+		if err != nil {
+			lastStatus, lastErr = nil, err
+		} else {
+			lastStatus, lastErr = &s, nil
+			if (active && s.Active(e.identity(), e.Now())) || (!active && s.Inactive(e.identity(), e.Now())) {
+				return nil
+			}
 		}
 		select {
 		case <-bounded.Done():
-			return bounded.Err()
+			diagnostic := gateTimeoutDiagnostic(e.identity(), active, lastStatus, lastErr)
+			if e.Log != nil {
+				fmt.Fprintf(e.Log, "updater: gate wait timed out: %s\n", diagnostic)
+			}
+			return fmt.Errorf("gate wait timed out: %s: %w", diagnostic, bounded.Err())
 		case <-ticker.C:
 		}
 	}
+}
+
+// gateTimeoutDiagnostic は待機打ち切り時の診断行を組み立てる。最後に読めた
+// gate-status（または読取失敗理由）と、合致しなかった期待条件を併記する。
+func gateTimeoutDiagnostic(id gate.Identity, active bool, last *gate.Status, lastErr error) string {
+	want := "INACTIVE"
+	if active {
+		want = "ACTIVE"
+	}
+	observed := fmt.Sprintf("gate-status unreadable: %v", lastErr)
+	if last != nil {
+		observed = fmt.Sprintf("gate-status phase=%q serverInstanceId=%q observedFlagTransaction=%v observedFlagGeneration=%v releasedFlagTransaction=%v releasedFlagGeneration=%v updatedAt=%s", last.Phase, last.ServerInstanceID, last.ObservedTransaction, last.ObservedGeneration, last.ReleasedTransaction, last.ReleasedGeneration, last.UpdatedAt)
+	}
+	return fmt.Sprintf("want fresh %s ack for podUID=%q transactionId=%q generation=%d; last observed: %s", want, id.PodUID, id.TransactionID, id.Generation, observed)
 }
 
 func (e *Engine) Suspend(ctx context.Context, reason string) error {
