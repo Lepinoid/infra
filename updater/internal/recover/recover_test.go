@@ -99,6 +99,111 @@ func TestRunQuarantinesEmptyJournalLeftover(t *testing.T) {
 	}
 }
 
+// Given: an ACTIVE PREPARING journal whose commitCandidate is TARGET while the
+// on-disk jars are still the SOURCE generation (infra#36 round-trip 2 wedged
+// startup on exactly this state)
+// When: init-recover runs
+// Then: startup is allowed, the journal is left in place for the cronjob
+// transaction to resume, and the decision is diagnosed to the log
+func TestRunAllowsPremutationJournalMatchingSource(t *testing.T) {
+	data := t.TempDir()
+	s := journal.Store{Root: filepath.Join(data, "plugins/.lepinoid")}
+	if err := s.Init(); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte("source-jar"))
+	sourceSHA := hex.EncodeToString(sum[:])
+	tsum := sha256.Sum256([]byte("target-jar"))
+	targetSHA := hex.EncodeToString(tsum[:])
+	for _, name := range []string{"LepinoidTools.jar", "Multiverse-Core.jar"} {
+		if err := os.WriteFile(filepath.Join(data, "plugins", name), []byte("source-jar"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const txn = "550e8400-e29b-41d4-a716-446655440000"
+	target := journal.Pair{Tools: journal.Jar{Name: "LepinoidTools.jar", SHA256: targetSHA}, Multiverse: journal.Jar{Name: "Multiverse-Core.jar", SHA256: targetSHA}}
+	j := journal.Journal{
+		SchemaVersion: 1, TransactionID: txn, Phase: "PREPARING", Lifecycle: "ACTIVE", AccessState: "OPEN",
+		CommitCandidate: ptrString("TARGET"), ExpectedPodUID: "pod-old",
+		TargetManifest: testManifest(targetSHA),
+		SourceDigest:   "sha256:" + strings.Repeat("cd", 32), TargetDigest: "sha256:" + strings.Repeat("ef", 32),
+		Source: journal.Pair{Tools: journal.Jar{Name: "LepinoidTools.jar", SHA256: sourceSHA}, Multiverse: journal.Jar{Name: "Multiverse-Core.jar", SHA256: sourceSHA}},
+		Target: target, StagingPath: filepath.Join("staging", "sha256:"+strings.Repeat("ef", 32)), BackupPath: filepath.Join("backup", "sha256:"+strings.Repeat("cd", 32)),
+	}
+	if err := journal.Save(s.Path("journal", txn), j); err != nil {
+		t.Fatal(err)
+	}
+	var log bytes.Buffer
+	now := time.Date(2026, 9, 23, 0, 0, 0, 0, time.UTC)
+	r := Runner{Store: s, Data: data, PodUID: "pod-new", Now: func() time.Time { return now }, Log: &log}
+	if err := r.Run(); err != nil {
+		t.Fatalf("pre-mutation journal with SOURCE jars must not block startup: %v", err)
+	}
+	if _, err := os.Stat(s.Path("journal", txn)); err != nil {
+		t.Fatalf("journal must be left for the cronjob resume: %v", err)
+	}
+	if _, err := os.Stat(s.Path("maintenance.flag")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("maintenance.flag must not be created: %v", err)
+	}
+	if !strings.Contains(log.String(), txn) {
+		t.Fatalf("decision not diagnosed: %q", log.String())
+	}
+}
+
+// Given: a pre-mutation journal whose SOURCE and candidate (TARGET) pairs both
+// disagree with the on-disk jars
+// When: init-recover runs
+// Then: init-unrecoverable identifies the jar, the expected/actual sha256, and
+// both attempted bases (SOURCE and candidate)
+func TestRunDiagnosesPremutationJournalMatchingNeither(t *testing.T) {
+	data := t.TempDir()
+	s := journal.Store{Root: filepath.Join(data, "plugins/.lepinoid")}
+	if err := s.Init(); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte("source-jar"))
+	sourceSHA := hex.EncodeToString(sum[:])
+	tsum := sha256.Sum256([]byte("target-jar"))
+	targetSHA := hex.EncodeToString(tsum[:])
+	foreign := sha256.Sum256([]byte("foreign-jar"))
+	foreignSHA := hex.EncodeToString(foreign[:])
+	for _, name := range []string{"LepinoidTools.jar", "Multiverse-Core.jar"} {
+		if err := os.WriteFile(filepath.Join(data, "plugins", name), []byte("foreign-jar"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const txn = "660e8400-e29b-41d4-a716-446655440000"
+	target := journal.Pair{Tools: journal.Jar{Name: "LepinoidTools.jar", SHA256: targetSHA}, Multiverse: journal.Jar{Name: "Multiverse-Core.jar", SHA256: targetSHA}}
+	j := journal.Journal{
+		SchemaVersion: 1, TransactionID: txn, Phase: "PREPARING", Lifecycle: "ACTIVE", AccessState: "OPEN",
+		CommitCandidate: ptrString("TARGET"), ExpectedPodUID: "pod-old",
+		TargetManifest: testManifest(targetSHA),
+		SourceDigest:   "sha256:" + strings.Repeat("cd", 32), TargetDigest: "sha256:" + strings.Repeat("ef", 32),
+		Source: journal.Pair{Tools: journal.Jar{Name: "LepinoidTools.jar", SHA256: sourceSHA}, Multiverse: journal.Jar{Name: "Multiverse-Core.jar", SHA256: sourceSHA}},
+		Target: target, StagingPath: filepath.Join("staging", "sha256:"+strings.Repeat("ef", 32)), BackupPath: filepath.Join("backup", "sha256:"+strings.Repeat("cd", 32)),
+	}
+	if err := journal.Save(s.Path("journal", txn), j); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 23, 0, 0, 0, 0, time.UTC)
+	r := Runner{Store: s, Data: data, PodUID: "pod-new", Now: func() time.Time { return now }}
+	err := r.Run()
+	if !errors.Is(err, ErrUnrecoverable) {
+		t.Fatalf("expected init-unrecoverable, got %v", err)
+	}
+	for _, want := range []string{"SOURCE", "candidate", "LepinoidTools.jar", sourceSHA, foreignSHA, txn} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("diagnostic lacks %q: %v", want, err)
+		}
+	}
+}
+
+func ptrString(v string) *string { return &v }
+
+func testManifest(toolsSHA string) journal.Manifest {
+	return journal.Manifest{SchemaVersion: 1, Version: "2026.09.23-1.21.8-bbbbb", OCIRepository: "ghcr.io/lepinoid/lepinoid-tools", Digest: "sha256:" + strings.Repeat("ef", 32), PluginCommitSHA: strings.Repeat("0123456789", 4), ToolsSHA: toolsSHA, MultiverseSHA: toolsSHA, MultiverseVersion: "5.8.1", SupportedMinecraft: []string{"1.21.8"}}
+}
+
 // Given: a non-empty schema-invalid journal that cannot decode
 // When: Runner.Run executes the init-recover path
 // Then: init-unrecoverable carries the corrupted file name
