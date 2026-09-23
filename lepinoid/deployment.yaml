@@ -134,7 +134,7 @@ spec:
               memory: 32Mi
         # world-sync: desired bundle digest の /data/<world> への反映 (issue #30)。/data は root 所有のため runAsUser:0。script は ConfigMap world-sync-script 由来。
         - name: world-sync
-          image: ghcr.io/lepinoid/plugin-updater:26.09.23-498b2@sha256:9ebccc7bbb731d2ce3c57823de5ae4b816c53772c81d0705f8bf38c9b972266f
+          image: ghcr.io/lepinoid/plugin-updater:26.09.23-a3964@sha256:82e9413fb43ba041673fcdd20de29fc765c1dd8327eefe45cbe4f4e0f0c09a5b
           imagePullPolicy: IfNotPresent
           command: ["/bin/busybox", "sh", "/scripts/world-sync-init.sh"]
           securityContext:
