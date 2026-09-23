@@ -91,7 +91,10 @@ func TestB4CheckpointWaitsForAcceptedOperation(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		x := checkpointTransaction(t)
 		started := time.Now()
-		r := &checkpointRunner{}
+		r := &checkpointRunner{issue: func(context.Context) ([]byte, error) {
+			// Actual Paper + rcon-cli stdout includes a trailing terminal reset.
+			return []byte("operationId=" + checkpointTestID + "\n\x1b[0m\n"), nil
+		}}
 		r.read = func(context.Context, string) ([]byte, error) {
 			s := checkpointSucceeded(x.j.ExpectedPodUID, time.Now())
 			if r.reads < 3 {

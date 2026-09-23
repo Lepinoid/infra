@@ -89,3 +89,26 @@ func TestStartupEventStatusRemainsHealthyWithValidIdentity(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckpointRCONTerminalReset(t *testing.T) {
+	const id = "550e8400-e29b-41d4-a716-446655440000"
+	for _, tc := range []struct{ name, input, id, reason string }{
+		{"accepted", "operationId=" + id + "\n\x1b[0m\n", id, ""},
+		{"busy", "error=busy\n\x1b[0m\n", "", "checkpoint-busy"},
+		{"unavailable", "error=unavailable\n\x1b[0m\n", "", "checkpoint-unavailable"},
+		{"embedded reset", "operationId=\x1b[0m" + id, "", "checkpoint-invalid-response"},
+		{"reset without newline", "operationId=" + id + "\x1b[0m", "", "checkpoint-invalid-response"},
+		{"unknown prefix", "prefix operationId=" + id + "\n\x1b[0m\n", "", "checkpoint-invalid-response"},
+		{"other escape", "operationId=" + id + "\x1b[31m", "", "checkpoint-invalid-response"},
+		{"extra text", "operationId=" + id + "\nextra\n\x1b[0m\n", "", "checkpoint-invalid-response"},
+		{"multiple responses", "operationId=" + id + "\nerror=busy\n\x1b[0m\n", "", "checkpoint-invalid-response"},
+		{"multiple resets", "operationId=" + id + "\x1b[0m\x1b[0m", "", "checkpoint-invalid-response"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gotID, gotReason := Checkpoint(tc.input)
+			if gotID != tc.id || gotReason != tc.reason {
+				t.Fatalf("Checkpoint(%q) = %q, %q; want %q, %q", tc.input, gotID, gotReason, tc.id, tc.reason)
+			}
+		})
+	}
+}
