@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lepinoid/infra/updater/internal/cluster"
 	"github.com/lepinoid/infra/updater/internal/journal"
 	updaterengine "github.com/lepinoid/infra/updater/internal/updater"
 )
@@ -38,7 +39,7 @@ func TestB7AnnotateRestartPassesPatchAsArgument(t *testing.T) {
 		if !strings.Contains(call.args[i+1], `"lepinoid.dev/restart-transaction":"`+x.j.TransactionID+`"`) {
 			t.Fatalf("patch missing restart annotation: %s", call.args[i+1])
 		}
-		want := []string{"patch", "deployment", "build-server", "--type=strategic", "-p"}
+		want := []string{"patch", "deployment", "build-server", "--type=strategic", "--field-manager=" + cluster.FieldManager, "-p"}
 		if !slices.Equal(call.args[:i+1], want) {
 			t.Fatalf("unexpected patch argv: %q", call.args)
 		}

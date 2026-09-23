@@ -3,6 +3,8 @@ package lease
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log"
 	"sync"
 	"time"
 )
@@ -11,6 +13,8 @@ var ErrLost = errors.New("lease lost or renewal deadline exceeded")
 
 const Duration = 60 * time.Second
 const RenewDeadline = 30 * time.Second
+
+const heartbeatInterval = 5 * time.Second
 
 type Record struct {
 	ResourceVersion string
@@ -26,18 +30,19 @@ type Lease struct {
 	api         API
 	holder      string
 	now         func() time.Time
+	logf        func(string, ...any)
 	mu          sync.Mutex
 	lastSuccess time.Time
-	lost        bool
+	lostErr     error
 }
 
 func New(api API, holder string, now func() time.Time) *Lease {
-	return &Lease{api: api, holder: holder, now: now}
+	return &Lease{api: api, holder: holder, now: now, logf: log.Printf}
 }
 
 func (l *Lease) Acquire(ctx context.Context) (bool, error) {
 	if l.holder == "" {
-		return false, ErrLost
+		return false, fmt.Errorf("%w: empty holder identity", ErrLost)
 	}
 	record, err := l.api.Get(ctx)
 	if err != nil {
@@ -55,72 +60,120 @@ func (l *Lease) Acquire(ctx context.Context) (bool, error) {
 	}
 	l.mu.Lock()
 	l.lastSuccess = now
-	l.lost = false
+	l.lostErr = nil
 	l.mu.Unlock()
 	return true, nil
 }
 
-func (l *Lease) Check(ctx context.Context) error {
+// checkLocalLocked preserves the first loss cause even when a later fence check
+// runs after the heartbeat has canceled the transaction.
+func (l *Lease) checkLocalLocked() error {
+	if l.lostErr == nil {
+		now := l.now()
+		if elapsed := now.Sub(l.lastSuccess); elapsed >= RenewDeadline {
+			l.lostErr = fmt.Errorf("%w: renewal deadline exceeded: holder=%q last_success=%s elapsed=%s deadline=%s", ErrLost, l.holder, l.lastSuccess.UTC().Format(time.RFC3339Nano), elapsed, RenewDeadline)
+		}
+	}
+	return l.lostErr
+}
+
+func (l *Lease) checkLocal() error {
 	l.mu.Lock()
-	expired := l.lost || l.now().Sub(l.lastSuccess) >= RenewDeadline
-	l.mu.Unlock()
-	if expired {
-		return ErrLost
+	defer l.mu.Unlock()
+	return l.checkLocalLocked()
+}
+
+func (l *Lease) observe(ctx context.Context) (Record, error) {
+	if err := context.Cause(ctx); err != nil {
+		return Record{}, err
+	}
+	if err := l.checkLocal(); err != nil {
+		return Record{}, err
 	}
 	r, err := l.api.Get(ctx)
 	if err != nil {
-		return err
+		return Record{}, fmt.Errorf("read lease: %w", err)
 	}
-	if r.Holder != l.holder || !l.now().Before(r.RenewedAt.Add(time.Duration(r.Duration)*time.Second)) {
-		l.mu.Lock()
-		l.lost = true
-		l.mu.Unlock()
-		return ErrLost
+	if err := context.Cause(ctx); err != nil {
+		return Record{}, err
 	}
-	return nil
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.checkLocalLocked(); err != nil {
+		return Record{}, err
+	}
+	now := l.now()
+	reason := ""
+	if r.Holder != l.holder {
+		reason = "holder mismatch"
+	} else if !now.Before(r.RenewedAt.Add(time.Duration(r.Duration) * time.Second)) {
+		reason = "record expired"
+	}
+	if reason != "" {
+		l.lostErr = fmt.Errorf("%w: %s: expected_holder=%q observed_holder=%q resource_version=%q renew_time=%s duration_seconds=%d observed_at=%s last_success_elapsed=%s", ErrLost, reason, l.holder, r.Holder, r.ResourceVersion, r.RenewedAt.UTC().Format(time.RFC3339Nano), r.Duration, now.UTC().Format(time.RFC3339Nano), now.Sub(l.lastSuccess))
+		return Record{}, l.lostErr
+	}
+	return r, nil
+}
+
+func (l *Lease) Check(ctx context.Context) error {
+	_, err := l.observe(ctx)
+	return err
 }
 
 func (l *Lease) renew(ctx context.Context) error {
-	if err := l.Check(ctx); err != nil {
-		return err
-	}
-	r, err := l.api.Get(ctx)
+	r, err := l.observe(ctx)
 	if err != nil {
 		return err
-	}
-	if r.Holder != l.holder {
-		return ErrLost
 	}
 	r.RenewedAt = l.now()
 	r.Duration = int(Duration / time.Second)
 	if _, err := l.api.Update(ctx, r); err != nil {
+		return fmt.Errorf("update lease: %w", err)
+	}
+	if err := context.Cause(ctx); err != nil {
 		return err
 	}
 	l.mu.Lock()
+	defer l.mu.Unlock()
+	// An update that finishes after the local deadline cannot restore authority.
+	if err := l.checkLocalLocked(); err != nil {
+		return err
+	}
 	l.lastSuccess = l.now()
-	l.mu.Unlock()
 	return nil
 }
 
-func (l *Lease) Heartbeat(ctx context.Context, cancel context.CancelFunc) {
-	ticker := time.NewTicker(5 * time.Second)
+func (l *Lease) Heartbeat(ctx context.Context, cancel context.CancelCauseFunc) {
+	ticker := time.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			bounded, stop := context.WithTimeout(ctx, 5*time.Second)
+			bounded, stop := context.WithTimeout(ctx, heartbeatInterval)
 			err := l.renew(bounded)
 			stop()
+			// Shutdown is not evidence of lost ownership, including cancellation
+			// while an API request is in flight.
+			if ctx.Err() != nil {
+				return
+			}
 			l.mu.Lock()
-			expired := l.now().Sub(l.lastSuccess) >= RenewDeadline
+			deadlineErr := l.checkLocalLocked()
+			elapsed := l.now().Sub(l.lastSuccess)
 			l.mu.Unlock()
-			if errors.Is(err, ErrLost) || expired {
-				l.mu.Lock()
-				l.lost = true
-				l.mu.Unlock()
-				cancel()
+			if err != nil {
+				l.logf("lease heartbeat renewal failed: holder=%q last_success_elapsed=%s error=%v", l.holder, elapsed, err)
+			}
+			if deadlineErr != nil && !errors.Is(err, ErrLost) {
+				// Retain the API failure which exhausted the renewal budget.
+				err = errors.Join(deadlineErr, err)
+			}
+			if errors.Is(err, ErrLost) {
+				l.logf("lease heartbeat lost authority: %v", err)
+				cancel(err)
 				return
 			}
 		}
@@ -133,7 +186,7 @@ func (l *Lease) Release(ctx context.Context) error {
 		return err
 	}
 	if r.Holder != l.holder {
-		return ErrLost
+		return fmt.Errorf("%w: release holder mismatch: expected_holder=%q observed_holder=%q resource_version=%q", ErrLost, l.holder, r.Holder, r.ResourceVersion)
 	}
 	r.Holder = ""
 	_, err = l.api.Update(ctx, r)

@@ -2,5 +2,9 @@ apiVersion: coordination.k8s.io/v1
 kind: Lease
 metadata:
   name: plugin-updater
+  annotations:
+    # Bootstrap only: holderIdentity/renewTime belong to the running updater.
+    # Reapplying this seed during a transaction can revoke its live Lease.
+    kustomize.toolkit.fluxcd.io/ssa: IfNotPresent
 spec:
   leaseDurationSeconds: 60

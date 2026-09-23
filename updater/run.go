@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"log"
 	"os"
 	"time"
 
@@ -19,6 +20,10 @@ func run(ctx context.Context) error {
 	}
 	commands := cluster.Commands{Timeout: 20 * time.Second}
 	lock := lease.New(cluster.LeaseAPI{Commands: commands}, holder, time.Now)
+	return runWithLease(ctx, lock, runTransaction)
+}
+
+func runWithLease(ctx context.Context, lock *lease.Lease, transaction func(context.Context, *lease.Lease) error) error {
 	acquired, err := lock.Acquire(ctx)
 	if err != nil {
 		return err
@@ -26,11 +31,26 @@ func run(ctx context.Context) error {
 	if !acquired {
 		return nil
 	}
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	go lock.Heartbeat(ctx, cancel)
-	defer func() {
-		_ = lock.Release(context.Background())
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	heartbeatCtx, stopHeartbeat := context.WithCancel(ctx)
+	heartbeatDone := make(chan struct{})
+	go func() {
+		defer close(heartbeatDone)
+		lock.Heartbeat(heartbeatCtx, cancel)
 	}()
-	return runTransaction(ctx, lock)
+	err = transaction(ctx, lock)
+	// Join before releasing so an in-flight renewal cannot race our own release
+	// or report the intentional empty holder as a loss of authority.
+	stopHeartbeat()
+	<-heartbeatDone
+	if cause := context.Cause(ctx); cause != nil && !errors.Is(err, cause) {
+		err = errors.Join(err, cause)
+	}
+	releaseCtx, stopRelease := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stopRelease()
+	if releaseErr := lock.Release(releaseCtx); releaseErr != nil {
+		log.Printf("lease release failed: %v", releaseErr)
+	}
+	return err
 }

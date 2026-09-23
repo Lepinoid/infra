@@ -77,7 +77,11 @@ func (c Commands) Kubectl(ctx context.Context, input []byte, args ...string) ([]
 	return c.Run(ctx, input, "kubectl", append(base, args...)...)
 }
 
-type LeaseAPI struct{ Commands Commands }
+// FieldManager identifies controller-owned runtime fields. Flux removes fields
+// written by the default kubectl-* managers during reconciliation.
+const FieldManager = "plugin-updater"
+
+type LeaseAPI struct{ Commands Runner }
 type leaseWire struct {
 	APIVersion string `json:"apiVersion"`
 	Kind       string `json:"kind"`
@@ -113,8 +117,10 @@ func (a LeaseAPI) Get(ctx context.Context) (lease.Record, error) {
 }
 
 func (a LeaseAPI) Update(ctx context.Context, r lease.Record) (lease.Record, error) {
-	wire := leaseWire{APIVersion: "coordination.k8s.io/v1", Kind: "Lease"}
-	wire.Metadata.Name = "plugin-updater"
+	if r.ResourceVersion == "" {
+		return lease.Record{}, errors.New("lease update requires resourceVersion")
+	}
+	var wire leaseWire
 	wire.Metadata.ResourceVersion = r.ResourceVersion
 	wire.Spec.Holder = r.Holder
 	// Kubernetes の coordination.k8s.io Lease (MicroTime) は小数点ちょうど6桁の
@@ -122,11 +128,17 @@ func (a LeaseAPI) Update(ctx context.Context, r lease.Record) (lease.Record, err
 	// (ナノ秒9桁) も RFC3339 (秒精度) も拒否されるため固定6桁にフォーマットする。
 	wire.Spec.RenewedAt = r.RenewedAt.UTC().Format("2006-01-02T15:04:05.000000Z07:00")
 	wire.Spec.Duration = r.Duration
-	data, err := json.Marshal(wire)
+	// A resourceVersion-guarded merge patch preserves Flux labels/annotations and
+	// unrelated Lease fields. Replacing our partial wire object deletes them.
+	patch := struct {
+		Metadata map[string]string `json:"metadata"`
+		Spec     any               `json:"spec"`
+	}{map[string]string{"resourceVersion": r.ResourceVersion}, wire.Spec}
+	data, err := json.Marshal(patch)
 	if err != nil {
 		return lease.Record{}, err
 	}
-	out, err := a.Commands.Kubectl(ctx, data, "replace", "-f", "-", "-o", "json")
+	out, err := a.Commands.Kubectl(ctx, nil, "patch", "lease", "plugin-updater", "--type=merge", "--field-manager="+FieldManager, "-p", string(data), "-o", "json")
 	if err != nil {
 		return lease.Record{}, err
 	}
