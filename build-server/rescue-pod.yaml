@@ -15,7 +15,7 @@ spec:
       type: RuntimeDefault
   containers:
     - name: rescue
-      image: ghcr.io/lepinoid/plugin-updater:26.09.22-de92d@sha256:860c6fd9dda8804b79de6b869856a623e2d0f30f592168959ad5aef3961e7e0e
+      image: ghcr.io/lepinoid/plugin-updater:26.09.23-498b2@sha256:9ebccc7bbb731d2ce3c57823de5ae4b816c53772c81d0705f8bf38c9b972266f
       command: ["/bin/busybox"]
       args: ["sleep", "infinity"]
       securityContext:
