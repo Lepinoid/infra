@@ -92,7 +92,12 @@ func (s Status) Healthy(want Startup, now time.Time) bool {
 var checkpoint = regexp.MustCompile(`^operationId=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$`)
 
 func Checkpoint(text string) (string, string) {
+	// Paper appends a newline to Bukkit command replies. rcon-cli 1.7.7
+	// renders that newline as "\n\x1b[0m" on Unix, even without a TTY.
+	// Remove only its terminal reset; embedded escapes and extra response
+	// lines must still fail the exact protocol match below.
 	text = strings.TrimSpace(text)
+	text = strings.TrimSpace(strings.TrimSuffix(text, "\n\x1b[0m"))
 	switch text {
 	case "error=busy":
 		return "", "checkpoint-busy"
