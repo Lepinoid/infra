@@ -123,6 +123,16 @@ spec:
         - name: minecraft
           image: itzg/minecraft-server:latest
           imagePullPolicy: Always
+          # mc-server-runner uses generated RCON credentials, which may differ
+          # from the persisted properties when OVERRIDE_SERVER_PROPERTIES=false.
+          # Stop through the same authoritative password as the updater.
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - sh
+                  - -ec
+                  - 'exec rcon-cli --password "$(sed -n "s/^rcon.password=//p" /data/server.properties)" stop'
           env:
             - name: EULA
               value: "true"
