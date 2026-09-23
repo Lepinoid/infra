@@ -91,6 +91,10 @@ func (e *Engine) Flag(ctx context.Context) error {
 }
 
 func (e *Engine) WaitGate(ctx context.Context, active bool) error {
+	return e.waitGateAfter(ctx, active, time.Time{})
+}
+
+func (e *Engine) waitGateAfter(ctx context.Context, active bool, notBefore time.Time) error {
 	bounded, cancel := context.WithTimeout(ctx, gate.AckTimeout)
 	defer cancel()
 	ticker := time.NewTicker(time.Second)
@@ -103,7 +107,7 @@ func (e *Engine) WaitGate(ctx context.Context, active bool) error {
 			lastStatus, lastErr = nil, err
 		} else {
 			lastStatus, lastErr = &s, nil
-			if (active && s.Active(e.identity(), e.Now())) || (!active && s.Inactive(e.identity(), e.Now())) {
+			if !s.UpdatedAt.Before(notBefore) && ((active && s.Active(e.identity(), e.Now())) || (!active && s.Inactive(e.identity(), e.Now()))) {
 				return nil
 			}
 		}
@@ -165,7 +169,7 @@ func (e *Engine) Open(ctx context.Context, restore func(context.Context) error) 
 	if err := fsutil.SyncDir(e.Store.Root); err != nil {
 		return err
 	}
-	if err := e.WaitGate(ctx, false); err != nil {
+	if err := e.waitGateAfter(ctx, false, e.Now()); err != nil {
 		e.Journal.MaintenanceRequired = true
 		if saveErr := e.Save(ctx); saveErr != nil {
 			return saveErr
