@@ -3,6 +3,6 @@ kind: ConfigMap
 metadata:
   name: world-versions
 data:
-  digest: "sha256:c02b33b05a54ffa07f9149bec941533e504c18cda438958e347a2e85847b6e13"
-  version: "2026.10.02-a259e"
-  gitCommitSha: "a259e91aac7c117b45a70c671afe45bd8a979dc3"
+  digest: "sha256:07eaca993d9352a97fb9b639004c693e93a5bead1e7cf047a3facce1e4cb6ec0"
+  version: "2026.10.09-4c982"
+  gitCommitSha: "4c9829648308033c59d6874fe9b65e6591ca05d1"
