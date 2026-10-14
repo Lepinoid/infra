@@ -9,7 +9,7 @@ Flux CD がこのリポジトリを監視し、`lepinoid` namespace にリソー
 | コンポーネント | 概要 |
 |---------------|------|
 | **CouchDB** | Obsidian LiveSync バックエンド。ユーザー自動セットアップ用サイドカー付き |
-| **LiveSync Bridge** | CouchDB と Git リポジトリ間の vault 同期ブリッジ |
+| **[LiveSync Bridge](livesync-bridge/README.md)** | CouchDB と Git リポジトリ間の vault 同期ブリッジ。Obsidian からの Git 操作・復旧手順 |
 | **Cloudflared** | Cloudflare Tunnel による外部アクセス（token ベース） |
 | **Grafana** | Prometheus 接続のモニタリングダッシュボード。Cloudflare Access 認証 |
 

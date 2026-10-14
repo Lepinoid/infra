@@ -16,7 +16,7 @@ spec:
   chart:
     spec:
       chart: livesync-bridge
-      version: ">=1.0.0 <2.0.0"
+      version: ">=1.0.2 <2.0.0"
       sourceRef:
         kind: HelmRepository
         name: livesync-bridge
