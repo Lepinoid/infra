@@ -62,7 +62,8 @@ else
   args+=(--annotation "org.opencontainers.image.revision=$(jq -r .gitCommitSha "$bundle/manifest.json")"
     --annotation "net.lepinoid.pool-fingerprint=$POOL_FINGERPRINT"
     --annotation "net.lepinoid.runtime-revision=$RUNTIME_REVISION"
-    --annotation 'org.opencontainers.image.source=https://github.com/Lepinoid/Worlds'
+    --annotation 'org.opencontainers.image.source=https://github.com/Lepinoid/infra'
+    --annotation 'net.lepinoid.world-source=https://github.com/Lepinoid/Worlds'
     --annotation "org.opencontainers.image.created=$(jq -r .createdAt "$bundle/manifest.json")")
   if [[ -n ${BUILD_URL:-} ]]; then
     args+=(--annotation "net.lepinoid.build-url=$BUILD_URL")

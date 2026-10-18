@@ -62,7 +62,8 @@ jq -e '
   .layers[0].mediaType == "application/vnd.lepinoid.world-bundle.manifest.v1+json" and
   all(.layers[1:][]; .mediaType == "application/vnd.lepinoid.world-bundle.archive.v1.tar+gzip") and
   .annotations["org.opencontainers.image.revision"] == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" and
-  .annotations["org.opencontainers.image.source"] == "https://github.com/Lepinoid/Worlds" and
+  .annotations["org.opencontainers.image.source"] == "https://github.com/Lepinoid/infra" and
+  .annotations["net.lepinoid.world-source"] == "https://github.com/Lepinoid/Worlds" and
   .annotations["org.opencontainers.image.created"] == "2026-09-10T00:00:00Z" and
   .annotations["net.lepinoid.build-url"] == "https://example.test/build/1" and
   .annotations["net.lepinoid.pool-fingerprint"] == "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" and
