@@ -1,33 +1,119 @@
-# Tailscale Operator (tailscale namespace) からの Ingress 許可
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
-metadata:
-  name: allow-tailscale-ingress
+metadata: {name: lepinoid-pool-dns}
 spec:
   podSelector:
-    matchLabels:
-      app: lepinoid
-  policyTypes:
-    - Ingress
+    matchLabels: {lepinoid.net/pool: dev}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: lepinoid-pool-runtime}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: lepinoid-runtime-pool}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: lepinoid-pool-velocity}
+      ports:
+        - {protocol: TCP, port: 25565}
+        - {protocol: TCP, port: 8081}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app: lepinoid-runtime-db}
+      ports: [{protocol: TCP, port: 5432}]
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: lepinoid-pool-nats}
+      ports: [{protocol: TCP, port: 4222}]
+    - ports: [{protocol: TCP, port: 443}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: lepinoid-pool-velocity}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: lepinoid-pool-velocity}
+  policyTypes: [Ingress, Egress]
   ingress:
     - from:
         - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: tailscale
+            matchLabels: {kubernetes.io/metadata.name: tailscale}
+      ports: [{protocol: TCP, port: 25565}]
+  egress:
+    - ports: [{protocol: TCP, port: 443}]
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: lepinoid-runtime-pool}
       ports:
-        - protocol: TCP
-          port: 25565
+        - {protocol: TCP, port: 25565}
+        - {protocol: TCP, port: 8081}
 ---
-# lepinoid アプリからの Egress 許可（Mojang API / 認証データ取得など外部 HTTPS 用）
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
-metadata:
-  name: allow-lepinoid-egress
+metadata: {name: lepinoid-pool-postgres}
 spec:
   podSelector:
+    matchLabels: {app: lepinoid-runtime-db}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: lepinoid-runtime-pool}
+      ports: [{protocol: TCP, port: 5432}]
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: lepinoid-pool-nats}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: lepinoid-pool-nats}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: lepinoid-runtime-pool}
+      ports: [{protocol: TCP, port: 4222}]
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: lepinoid-resourcepack-ingress}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: lepinoid-runtime-pool}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app: cloudflared}
+      ports: [{protocol: TCP, port: 8082}]
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: lepinoid-pool-apiserver
+spec:
+  endpointSelector:
     matchLabels:
-      app: lepinoid
-  policyTypes:
-    - Egress
+      app.kubernetes.io/name: lepinoid-pool-velocity
   egress:
-    - {}
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - {port: "443", protocol: TCP}
+            - {port: "6443", protocol: TCP}

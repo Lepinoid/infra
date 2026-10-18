@@ -1,18 +1,18 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: lepinoid-db
+  name: lepinoid-runtime-db
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: lepinoid-db
+      app: lepinoid-runtime-db
   strategy:
     type: Recreate
   template:
     metadata:
       labels:
-        app: lepinoid-db
+        app: lepinoid-runtime-db
     spec:
       containers:
         - name: postgres
@@ -42,9 +42,6 @@ spec:
           volumeMounts:
             - name: lepinoid-db-data
               mountPath: /var/lib/postgresql/data
-            - name: lepinoid-db-init-sql
-              mountPath: /docker-entrypoint-initdb.d
-              readOnly: true
           livenessProbe:
             exec:
               command:
@@ -71,7 +68,4 @@ spec:
       volumes:
         - name: lepinoid-db-data
           persistentVolumeClaim:
-            claimName: lepinoid-db-data
-        - name: lepinoid-db-init-sql
-          configMap:
-            name: lepinoid-db-init-sql
+            claimName: lepinoid-runtime-db-data

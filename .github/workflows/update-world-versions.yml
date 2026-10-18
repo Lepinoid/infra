@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: World bundle version YYYY.MM.DD-<sha5> (manual rollback)
+        description: Imported bundle tag YYYY.MM.DD-<worldsha5>-<runtimesha7> (manual rollback)
         required: false
         type: string
       digest:
@@ -11,9 +11,11 @@ on:
         required: false
         type: string
 concurrency:
-  group: world-bundle
+  group: lepinoid-desired-state
   cancel-in-progress: false
 permissions: {}
+env:
+  WORLD_BUNDLE_REPOSITORY: ghcr.io/lepinoid/runtime-world-bundle
 jobs:
   update:
     runs-on: ubuntu-latest
@@ -22,7 +24,7 @@ jobs:
       packages: read
     steps:
       # Check out latest main after acquiring the concurrency slot (AC8),
-      # serializing desired-state updates with world-bundle.yml.
+      # serializing desired-state updates with runtime and world publishing.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           ref: main
@@ -40,6 +42,7 @@ jobs:
           INPUT_VERSION: ${{ inputs.version }}
           INPUT_DIGEST: ${{ inputs.digest }}
           OUT: ${{ runner.temp }}/world-desired.json
+          REPOSITORY: ${{ env.WORLD_BUNDLE_REPOSITORY }}
         run: ci/resolve-world-bundle.sh
       - name: Commit desired state and push
         env:
@@ -54,10 +57,18 @@ jobs:
           digest=$(jq -er .digest "$DESIRED")
           version=$(jq -er .version "$DESIRED")
           sha=$(jq -er .gitCommitSha "$DESIRED")
-          world_desired_update "$digest" "$version" "$sha" .
+          fingerprint=$(jq -er .poolFingerprint "$DESIRED")
+          importer_sha=$(jq -er .importerSha "$DESIRED")
+          printf '%s' "$PUSH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker manifest inspect "ghcr.io/lepinoid/lepinoid:${importer_sha:0:7}" >/dev/null
+          docker manifest inspect "ghcr.io/lepinoid/lepinoid:${importer_sha:0:7}-velocity" >/dev/null
+          world_desired_update "$digest" "$version" "$sha" . "$fingerprint" "$importer_sha"
+          kubectl kustomize . >/dev/null
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           git add lepinoid/world-versions.yaml lepinoid/deployment.yaml
+          if [[ -f lepinoid/velocity.yaml ]]; then git add lepinoid/velocity.yaml; fi
+          git add lepinoid/runtime-version.yaml
           if git diff --cached --quiet; then exit 0; fi
           git commit -m "chore(lepinoid): rollback world bundle to $version"
           git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 -w0)" push "https://github.com/$REPOSITORY.git" HEAD:main

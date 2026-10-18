@@ -10,12 +10,18 @@ on:
         required: false
         default: main
         type: string
+      runtime_sha:
+        description: Published runtime full SHA (empty keeps the deployed runtime)
+        required: false
+        type: string
 
 concurrency:
-  group: world-bundle
+  group: lepinoid-desired-state
   cancel-in-progress: false
 
 permissions: {}
+env:
+  WORLD_BUNDLE_REPOSITORY: ghcr.io/lepinoid/runtime-world-bundle
 
 jobs:
   world-bundle:
@@ -52,6 +58,20 @@ jobs:
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
+      - name: Resolve target runtime source
+        id: runtime
+        env:
+          INPUT_RUNTIME_SHA: ${{ inputs.runtime_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha=$INPUT_RUNTIME_SHA
+          if [[ -z "$sha" ]]; then
+            sha=$(sed -n 's/^  source-sha: "\([0-9a-f]\{40\}\)"$/\1/p' lepinoid/runtime-version.yaml)
+          fi
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
       # PAT_TOKEN needs Lepinoid/Worlds contents:read (owner-managed, external prerequisite).
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
@@ -64,35 +84,134 @@ jobs:
           sparse-checkout: ${{ steps.worlds.outputs.paths }}
           sparse-checkout-cone-mode: true
 
-      - name: Build deterministic world bundle
-        run: ci/build-world-bundle.sh worlds lepinoid/world-sync-config.yaml "$RUNNER_TEMP/bundle"
+      - name: Reuse an existing imported bundle before running the importer
+        id: existing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          REPOSITORY: ${{ env.WORLD_BUNDLE_REPOSITORY }}
+          RUNTIME_REVISION: ${{ steps.runtime.outputs.sha }}
+          OUT: ${{ runner.temp }}/world-desired.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha=$(git -C worlds rev-parse HEAD)
+          cts=$(git -C worlds log -1 --format=%ct)
+          version="$(TZ=Asia/Tokyo date -d "@$cts" +%Y.%m.%d)-${sha:0:5}"
+          status=0
+          ALLOW_MISSING=1 INPUT_VERSION="$version-${RUNTIME_REVISION:0:7}" ci/resolve-world-bundle.sh || status=$?
+          case "$status" in
+            0)
+              jq -e --arg sha "$sha" --arg runtime "$RUNTIME_REVISION" \
+                '.gitCommitSha == $sha and .importerSha == $runtime' "$OUT" >/dev/null
+              echo 'reuse=true' >> "$GITHUB_OUTPUT"
+              ;;
+            3) echo 'reuse=false' >> "$GITHUB_OUTPUT" ;;
+            *) exit "$status" ;;
+          esac
+
+      - name: Verify published runtime and proxy images
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUNTIME_REVISION: ${{ steps.runtime.outputs.sha }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          tag=${RUNTIME_REVISION:0:7}
+          docker manifest inspect "ghcr.io/lepinoid/lepinoid:$tag" >/dev/null
+          docker manifest inspect "ghcr.io/lepinoid/lepinoid:$tag-velocity" >/dev/null
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        if: steps.existing.outputs.reuse != 'true'
+        with:
+          repository: Lepinoid/lepinoid
+          token: ${{ secrets.PAT_TOKEN }}
+          ref: ${{ steps.runtime.outputs.sha }}
+          path: runtime-source
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        if: steps.existing.outputs.reuse != 'true'
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        if: steps.existing.outputs.reuse != 'true'
+        uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1
+
+      - name: Import offline authoring worlds and fingerprint runtime inputs
+        if: steps.existing.outputs.reuse != 'true'
+        id: imported
+        shell: bash
+        run: |
+          set -euo pipefail
+          imported="$RUNNER_TEMP/imported"
+          mkdir -p "$imported"
+          cd runtime-source
+          ./gradlew installDist --max-workers=2
+          for world in terrestrial lv1; do
+            ./gradlew -p tools/world-import importWorld --max-workers=2 \
+              --args="--source $GITHUB_WORKSPACE/worlds/$world --output $imported/$world --world $world"
+          done
+          fingerprint=$(LEPINOID_WORLD_PATH="$imported/terrestrial" \
+            LEPINOID_SECOND_WORLD_PATH="$imported/lv1" \
+            LEPINOID_WORLD_SCRATCH="$RUNNER_TEMP/fingerprint-scratch" \
+            runtime/bootstrap/build/install/bootstrap/bin/bootstrap world-fingerprint)
+          [[ "$fingerprint" =~ ^[0-9a-f]{64}$ ]]
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+
+      - name: Build deterministic imported world bundle
+        if: steps.existing.outputs.reuse != 'true'
+        run: ci/build-world-bundle.sh worlds lepinoid/world-sync-config.yaml "$RUNNER_TEMP/bundle" "$RUNNER_TEMP/imported"
 
       - name: Publish world bundle (immutable tag)
+        if: steps.existing.outputs.reuse != 'true'
         id: publish
         env:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BUILD_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REPOSITORY: ${{ env.WORLD_BUNDLE_REPOSITORY }}
+          POOL_FINGERPRINT: ${{ steps.imported.outputs.fingerprint }}
+          RUNTIME_REVISION: ${{ steps.runtime.outputs.sha }}
         run: ci/publish-world-bundle.sh "$RUNNER_TEMP/bundle"
+
+      - name: Record newly published desired artifact
+        if: steps.existing.outputs.reuse != 'true'
+        env:
+          DIGEST: ${{ steps.publish.outputs.digest }}
+          POOL_FINGERPRINT: ${{ steps.imported.outputs.fingerprint }}
+          RUNTIME_REVISION: ${{ steps.runtime.outputs.sha }}
+        run: |
+          jq --arg digest "$DIGEST" --arg fingerprint "$POOL_FINGERPRINT" --arg runtime "$RUNTIME_REVISION" \
+            '{digest:$digest,version:.version,gitCommitSha:.gitCommitSha,poolFingerprint:$fingerprint,importerSha:$runtime}' \
+            "$RUNNER_TEMP/bundle/manifest.json" > "$RUNNER_TEMP/world-desired.json"
 
       - name: Update desired state and push
         env:
           PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
-          DIGEST: ${{ steps.publish.outputs.digest }}
-          BUNDLE_DIR: ${{ runner.temp }}/bundle
+          DESIRED: ${{ runner.temp }}/world-desired.json
         shell: bash
         run: |
           set -euo pipefail
           source ci/lib/world-bundle-version.sh
           source ci/lib/world-desired-state.sh
-          version=$(jq -er .version "$BUNDLE_DIR/manifest.json")
-          sha=$(jq -er .gitCommitSha "$BUNDLE_DIR/manifest.json")
-          # Update both the ConfigMap and deployment annotation in ONE commit so Flux rolls the pod.
-          world_desired_update "$DIGEST" "$version" "$sha" .
+          digest=$(jq -er .digest "$DESIRED")
+          version=$(jq -er .version "$DESIRED")
+          sha=$(jq -er .gitCommitSha "$DESIRED")
+          fingerprint=$(jq -er .poolFingerprint "$DESIRED")
+          runtime=$(jq -er .importerSha "$DESIRED")
+          # Commit images, source revision, worlds and compatibility metadata together.
+          world_desired_update "$digest" "$version" "$sha" . "$fingerprint" "$runtime"
+          kubectl kustomize . >/dev/null
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add lepinoid/world-versions.yaml lepinoid/deployment.yaml
+          if [[ -f lepinoid/velocity.yaml ]]; then git add lepinoid/velocity.yaml; fi
+          git add lepinoid/runtime-version.yaml
           if git diff --cached --quiet; then exit 0; fi
           git commit -m "chore(lepinoid): update world bundle to $version"
           git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 -w0)" push "https://github.com/$REPOSITORY.git" HEAD:main

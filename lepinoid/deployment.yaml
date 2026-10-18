@@ -1,235 +1,220 @@
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: v1
+kind: Service
 metadata:
-  name: lepinoid
+  name: lepinoid-runtime-pool
 spec:
-  replicas: 1
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: lepinoid-runtime-pool
+  ports:
+    - {name: minecraft, port: 25565, targetPort: minecraft}
+    - {name: management, port: 8080, targetPort: management}
+    - {name: control, port: 8081, targetPort: control}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: lepinoid-runtime-pool
+spec:
+  serviceName: lepinoid-runtime-pool
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  # The proxy owns replicas; Kubernetes defaults a newly created StatefulSet to one.
   selector:
     matchLabels:
-      app: lepinoid
-  strategy:
-    type: Recreate
+      app.kubernetes.io/name: lepinoid-runtime-pool
   template:
     metadata:
       annotations:
-        # world-bundle.yml / update-world-versions.yml が desired digest で更新する。
-        # この annotation 変更が Pod template を変えるため rollout が発生し world-sync initContainer が切替を行う。
-        lepinoid.dev/world-bundle-digest: "sha256:6f352245b65af801b25e03e3f7592f768d910e0ad12f587e121874e1ab3ee14c"
+        lepinoid.dev/world-bundle-digest: "sha256:d3978d4b3a3ea7f1ca89cd79aef948b9604ba86191b23fb5f86b1cdeff80d026"
       labels:
-        app: lepinoid
+        app.kubernetes.io/name: lepinoid-runtime-pool
+        lepinoid.net/pool: dev
     spec:
-      # strict-local 依存がないため固定 (nodeSelector) ではなく優先配置とする
-      affinity:
-        nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              preference:
-                matchExpressions:
-                  - key: kubernetes.io/hostname
-                    operator: In
-                    values:
-                      - mainworker-1
       imagePullSecrets:
         - name: ghcr-pull-secret
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 300
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
       initContainers:
-        - name: wait-for-db
-          image: postgres:16
-          command:
-            - sh
-            - -c
-            - until pg_isready -h lepinoid-db -U "$POSTGRES_USER" -d "$POSTGRES_DB"; do echo waiting for db; sleep 2; done
-          env:
-            - name: POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: lepinoid-db-credentials
-                  key: POSTGRES_USER
-            - name: POSTGRES_DB
-              valueFrom:
-                secretKeyRef:
-                  name: lepinoid-db-credentials
-                  key: POSTGRES_DB
-            - name: PGPASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: lepinoid-db-credentials
-                  key: POSTGRES_PASSWORD
-          resources:
-            requests:
-              cpu: 10m
-              memory: 32Mi
-            limits:
-              cpu: 50m
-              memory: 64Mi
-        - name: render-configs
-          image: busybox:1.36
-          command:
-            - sh
-            - -c
-            - |
-              cat > /config/database.json << EOF
-              {
-                "isEnable": true,
-                "url": "//lepinoid-db:5432",
-                "name": "lepinoid",
-                "user": "${DB_USER}",
-                "pass": "${DB_PASSWORD}",
-                "init": "",
-                "configs": {},
-                "amounts": {
-                  "maxPoolSize": 10,
-                  "maxLifeTime": 1800000,
-                  "connectionTimeout": 30000,
-                  "idleTimeout": 600000
-                }
-              }
-              EOF
-              cat > /config/auth.json << EOF
-              {
-                "disable": false,
-                "repository": "Lepinoid/OperatorInfo",
-                "filePath": "operators.yml",
-                "githubToken": "${GITHUB_TOKEN}"
-              }
-              EOF
-              # world-sync が配布するワールドを mod が読み込むための worlds 設定（terrestrial=1 台ロード）
-              cat > /config/config.json << EOF
-              {
-                "worlds": {
-                  "terrestrial": 1
-                },
-                "vanilla": {
-                  "genOverworld": true,
-                  "genDimensions": true,
-                  "mobSpawn": true,
-                  "naturalRegeneration": true
-                }
-              }
-              EOF
-          env:
-            - name: DB_USER
-              valueFrom:
-                secretKeyRef:
-                  name: lepinoid-db-credentials
-                  key: POSTGRES_USER
-            - name: DB_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: lepinoid-db-credentials
-                  key: POSTGRES_PASSWORD
-            - name: GITHUB_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: lepinoid-auth
-                  key: GITHUB_TOKEN
-          volumeMounts:
-            - name: lepinoid-configs
-              mountPath: /config
-          resources:
-            requests:
-              cpu: 5m
-              memory: 16Mi
-            limits:
-              cpu: 10m
-              memory: 32Mi
-        # world-sync: desired bundle digest の /data/<world> への反映 (issue #30)。/data は root 所有のため runAsUser:0。script は ConfigMap world-sync-script 由来。
         - name: world-sync
           image: ghcr.io/lepinoid/plugin-updater:26.09.23-a3964@sha256:82e9413fb43ba041673fcdd20de29fc765c1dd8327eefe45cbe4f4e0f0c09a5b
           imagePullPolicy: IfNotPresent
-          command: ["/bin/busybox", "sh", "/scripts/world-sync-init.sh"]
+          command: [/bin/busybox, sh, -ec]
+          args:
+            - |
+              /bin/busybox sh /scripts/world-sync-init.sh
+              /bin/busybox chmod -R a+rX /worlds
           securityContext:
+            runAsNonRoot: false
             runAsUser: 0
             runAsGroup: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 256Mi}
           env:
             - name: WORLD_BUNDLE_DIGEST
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.annotations['lepinoid.dev/world-bundle-digest']
-            - name: WORLD_BUNDLE_REPOSITORY
-              value: ghcr.io/lepinoid/world-bundle
-            - name: REGISTRY_CONFIG
-              value: /var/run/ghcr/.dockerconfigjson
-            - name: DATA_DIR
-              value: /data
-            - name: WORK_DIR
-              value: /work
-            - name: PULL_TIMEOUT_SECONDS
-              value: "900"
+            - {name: WORLD_BUNDLE_REPOSITORY, value: ghcr.io/lepinoid/runtime-world-bundle}
+            - {name: REGISTRY_CONFIG, value: /var/run/ghcr/.dockerconfigjson}
+            - {name: DATA_DIR, value: /worlds}
+            - {name: WORK_DIR, value: /work}
+            - {name: PULL_TIMEOUT_SECONDS, value: "900"}
           volumeMounts:
-            - name: lepinoid-data
-              mountPath: /data
-            - name: world-sync-script
-              mountPath: /scripts
-              readOnly: true
-            - name: ghcr-pull-secret
-              mountPath: /var/run/ghcr
-              readOnly: true
-            - name: world-sync-work
-              mountPath: /work
+            - {name: worlds, mountPath: /worlds}
+            - {name: world-sync-script, mountPath: /scripts, readOnly: true}
+            - {name: ghcr-pull-secret, mountPath: /var/run/ghcr, readOnly: true}
+            - {name: world-sync-work, mountPath: /work}
+        - name: select-presence-credentials
+          image: ghcr.io/lepinoid/lepinoid:b3a78b8
+          imagePullPolicy: IfNotPresent
+          command: [/bin/sh, /run/pool/select-credentials.sh]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
           resources:
-            requests:
-              cpu: 50m
-              memory: 64Mi
-            limits:
-              cpu: "1"
-              memory: 256Mi
-      containers:
-        - name: lepinoid
-          image: ghcr.io/lepinoid/lepinoid:8796435
-          imagePullPolicy: Always
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 100m, memory: 128Mi}
           env:
-            - name: EULA
-              value: "true"
-            - name: JAVA_TOOL_OPTIONS
-              value: "-Xms512M -Xmx2G"
-          ports:
-            - name: minecraft
-              containerPort: 25565
-              protocol: TCP
+            - name: LEPINOID_INSTANCE_ID
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
           volumeMounts:
-            - name: lepinoid-data
-              mountPath: /data
-            - name: lepinoid-configs
-              mountPath: /data/config/lepinoid/database.json
-              subPath: database.json
-              readOnly: true
-            - name: lepinoid-configs
-              mountPath: /data/config/lepinoid/auth.json
-              subPath: auth.json
-              readOnly: true
-            - name: lepinoid-configs
-              mountPath: /data/config/lepinoid/config.json
-              subPath: config.json
-              readOnly: true
-          livenessProbe:
-            tcpSocket:
-              port: minecraft
-            initialDelaySeconds: 60
-            periodSeconds: 30
-          readinessProbe:
-            tcpSocket:
-              port: minecraft
-            initialDelaySeconds: 30
-            periodSeconds: 10
+            - {name: runtime-scripts, mountPath: /run/pool, readOnly: true}
+            - {name: all-presence-credentials, mountPath: /run/all-presence, readOnly: true}
+            - {name: selected-presence-credentials, mountPath: /run/presence}
+      containers:
+        - name: runtime
+          image: ghcr.io/lepinoid/lepinoid:b3a78b8
+          imagePullPolicy: IfNotPresent
+          command: [/bin/sh, /run/pool/runtime-entrypoint.sh]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          ports:
+            - {name: minecraft, containerPort: 25565}
+            - {name: management, containerPort: 8080}
+            - {name: control, containerPort: 8081}
+            - {name: resourcepack, containerPort: 8082}
           resources:
-            requests:
-              cpu: 500m
-              memory: 1Gi
-            limits:
-              cpu: 2
-              memory: 2.5Gi
+            requests: {cpu: 500m, memory: 2Gi}
+            limits: {cpu: 1500m, memory: 3Gi}
+          env:
+            - {name: JAVA_TOOL_OPTIONS, value: "-Xmx2g -XX:ActiveProcessorCount=2 -XX:+ExitOnOutOfMemoryError"}
+            - name: LEPINOID_INSTANCE_ID
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - {name: LEPINOID_BIND_HOST, value: "0.0.0.0"}
+            - {name: LEPINOID_PORT, value: "25565"}
+            - {name: LEPINOID_STATUS_BIND_HOST, value: "0.0.0.0"}
+            - {name: LEPINOID_STATUS_PORT, value: "8080"}
+            - {name: LEPINOID_TRANSFER_BIND_HOST, value: "0.0.0.0"}
+            - {name: LEPINOID_TRANSFER_PORT, value: "8081"}
+            - {name: LEPINOID_MAX_PLAYERS, value: "8"}
+            - {name: LEPINOID_VIEW_DISTANCE, value: "8"}
+            - {name: LEPINOID_WORLD, value: TERRESTRIAL}
+            - {name: LEPINOID_WORLD_PATH, value: /worlds/terrestrial}
+            - {name: LEPINOID_SECOND_WORLD_PATH, value: /worlds/lv1}
+            - {name: LEPINOID_WORLD_SCRATCH, value: /scratch}
+            - {name: LEPINOID_AUTHENTICATION, value: velocity}
+            - name: LEPINOID_VELOCITY_SECRET
+              valueFrom: {secretKeyRef: {name: lepinoid-runtime-secrets, key: forwarding-secret}}
+            - name: LEPINOID_TRANSFER_SECRET
+              valueFrom: {secretKeyRef: {name: lepinoid-runtime-secrets, key: transfer-secret}}
+            - name: POSTGRES_DB
+              valueFrom: {secretKeyRef: {name: lepinoid-db-credentials, key: POSTGRES_DB}}
+            - {name: LEPINOID_JDBC_URL, value: "jdbc:postgresql://lepinoid-runtime-db:5432/$(POSTGRES_DB)"}
+            - name: LEPINOID_DB_USER
+              valueFrom: {secretKeyRef: {name: lepinoid-db-credentials, key: POSTGRES_USER}}
+            - name: LEPINOID_DB_PASSWORD
+              valueFrom: {secretKeyRef: {name: lepinoid-db-credentials, key: POSTGRES_PASSWORD}}
+            - {name: LEPINOID_AUTH_REPOSITORY, value: Lepinoid/OperatorInfo}
+            - {name: LEPINOID_AUTH_FILE_PATH, value: operators.yml}
+            - name: LEPINOID_AUTH_GITHUB_TOKEN
+              valueFrom: {secretKeyRef: {name: lepinoid-auth, key: GITHUB_TOKEN}}
+            - {name: LEPINOID_OP_PERMISSION_LEVEL, value: "4"}
+            - name: LEPINOID_CRAFT_KEY_ID
+              valueFrom: {secretKeyRef: {name: lepinoid-runtime-secrets, key: craft-key-id}}
+            - {name: LEPINOID_CRAFT_SEED_FILE, value: /run/crafting/seed.bin}
+            - {name: LEPINOID_PRESENCE_ENABLED, value: "true"}
+            - {name: LEPINOID_PRESENCE_ENDPOINT, value: "nats://lepinoid-pool-nats:4222"}
+            - {name: LEPINOID_PRESENCE_ENVIRONMENT, value: runtime-pool}
+            - {name: LEPINOID_WORLD_EDITS_PATH, value: /data/world-edits}
+            - {name: LEPINOID_RESOURCE_PACK_HTTP_HOST, value: "0.0.0.0"}
+            - {name: LEPINOID_RESOURCE_PACK_HTTP_PORT, value: "8082"}
+            - {name: LEPINOID_RESOURCE_PACK_URL, value: "https://pack-dev.lepinoid.net/resourcepack.zip"}
+          startupProbe:
+            httpGet: {path: /readyz, port: management}
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /readyz, port: management}
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: {path: /livez, port: management}
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          volumeMounts:
+            - {name: world-edits, mountPath: /data}
+            - {name: worlds, mountPath: /worlds, readOnly: true}
+            - {name: scratch, mountPath: /scratch}
+            - {name: tmp, mountPath: /tmp}
+            - {name: runtime-scripts, mountPath: /run/pool, readOnly: true}
+            - {name: selected-presence-credentials, mountPath: /run/presence, readOnly: true}
+            - {name: crafting-key, mountPath: /run/crafting, readOnly: true}
       volumes:
-        - name: lepinoid-data
-          persistentVolumeClaim:
-            claimName: lepinoid-data
-        - name: lepinoid-configs
-          emptyDir: {}
+        - {name: worlds, emptyDir: {}}
+        - {name: scratch, emptyDir: {}}
+        - {name: tmp, emptyDir: {}}
+        - name: runtime-scripts
+          configMap: {name: lepinoid-pool-runtime-scripts}
+        - name: selected-presence-credentials
+          emptyDir: {medium: Memory, sizeLimit: 1Mi}
         - name: world-sync-script
-          configMap:
-            name: world-sync-script
+          configMap: {name: world-sync-script}
         - name: ghcr-pull-secret
-          secret:
-            secretName: ghcr-pull-secret
+          secret: {secretName: ghcr-pull-secret}
         - name: world-sync-work
-          emptyDir:
-            sizeLimit: 1Gi
+          emptyDir: {}
+        - name: all-presence-credentials
+          secret:
+            secretName: lepinoid-runtime-secrets
+            defaultMode: 0440
+            items:
+              - {key: presence-0.username, path: presence-0.username}
+              - {key: presence-0.password, path: presence-0.password}
+              - {key: presence-1.username, path: presence-1.username}
+              - {key: presence-1.password, path: presence-1.password}
+              - {key: presence-2.username, path: presence-2.username}
+              - {key: presence-2.password, path: presence-2.password}
+        - name: crafting-key
+          secret:
+            secretName: lepinoid-runtime-secrets
+            defaultMode: 0440
+            items: [{key: craft-seed, path: seed.bin}]
+  volumeClaimTemplates:
+    - metadata:
+        name: world-edits
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: longhorn
+        resources:
+          requests:
+            storage: 1Gi

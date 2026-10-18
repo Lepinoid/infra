@@ -72,6 +72,16 @@ printf 'PASS: cmp out1/terrestrial.tar.gz out2/terrestrial.tar.gz (identical)\n'
 cmp "$tmp/out1/manifest.json" "$tmp/out2/manifest.json"
 printf 'PASS: cmp out1/manifest.json out2/manifest.json (identical)\n'
 
+# Imported bytes come from a separate tree; provenance still identifies authoring Git.
+mkdir -p "$tmp/imported/terrestrial/region"
+printf 'imported level\n' > "$tmp/imported/terrestrial/level.dat"
+printf 'FULL chunk\n' > "$tmp/imported/terrestrial/region/r.0.0.mca"
+bash "$BUILD" "$w" "$config" "$tmp/imported-bundle" "$tmp/imported"
+test "$(tar -xOzf "$tmp/imported-bundle/terrestrial.tar.gz" ./region/r.0.0.mca)" = 'FULL chunk'
+jq -e --arg sha "$commit_sha" '.gitCommitSha == $sha' "$tmp/imported-bundle/manifest.json" >/dev/null
+world_manifest_verify_archives "$tmp/imported-bundle/manifest.json" "$tmp/imported-bundle"
+printf 'PASS: imported content retains original authoring revision\n'
+
 write_config '[{"name":"absent","enabled":true}]'
 expect_failure missing-world
 write_config '[{"name":"terrestrial","enabled":false}]'

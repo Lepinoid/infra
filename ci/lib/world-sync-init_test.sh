@@ -80,7 +80,10 @@ run_init() {
     WORLD_BUNDLE_REPOSITORY=ghcr.io/lepinoid/world-bundle WORLD_BUNDLE_DIGEST="$desired" \
     ORAS_BIN="$FAKE" BB="$BB" FAKE_ORAS_STORE="$S/store" FAKE_ORAS_LOG="$S/oras.log" \
     "$BB" sh "$SCRIPT" > "$S/run.log" 2>&1 || rc=$?
-  assert_eq "$rc" 0
+  case "$expected" in
+    *-failure) assert_eq "$rc" 1 ;;
+    *) assert_eq "$rc" 0 ;;
+  esac
   result=$(sed -n 's/^RESULT=\([^ ]*\).*/\1/p' "$S/run.log")
   assert_eq "$result" "$expected"
 }

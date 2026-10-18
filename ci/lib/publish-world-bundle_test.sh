@@ -10,8 +10,11 @@ export FAKE_ORAS_STORE=$work/store FAKE_ORAS_LOG=$work/oras.log
 export ORAS_BIN=$script_dir/fake-oras.sh
 export GHCR_USER=u GHCR_TOKEN=t REPOSITORY=ghcr.io/lepinoid/world-bundle
 export BUILD_URL=https://example.test/build/1 GITHUB_OUTPUT=$work/github-output
+export POOL_FINGERPRINT=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+export RUNTIME_REVISION=0123456789012345678901234567890123456789
 unset FAKE_ORAS_FAIL FAKE_ORAS_FETCH_ERROR FAKE_ORAS_POST_PULL_HOOK FAKE_ORAS_AS_LIB
 version=2026.09.10-aaaaa
+tag=$version-${RUNTIME_REVISION:0:7}
 
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 no_push() { ! grep -q ' push ' "$FAKE_ORAS_LOG" || fail 'unexpected push'; }
@@ -50,7 +53,7 @@ digest=$(<"$work/stdout")
 [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'invalid digest stdout'
 [[ $(wc -l <"$work/stdout") == 1 ]] || fail 'extra stdout lines'
 grep -q ' push ' "$FAKE_ORAS_LOG" || fail 'missing push'
-[[ $(<"$FAKE_ORAS_STORE/tags/$version") == "$digest" ]] || fail 'tag not stored'
+[[ $(<"$FAKE_ORAS_STORE/tags/$tag") == "$digest" ]] || fail 'tag not stored'
 [[ $(<"$GITHUB_OUTPUT") == "digest=$digest" ]] || fail 'missing GitHub output'
 oci=$FAKE_ORAS_STORE/blobs/${digest#sha256:}/oci-manifest.json
 jq -e '
@@ -59,9 +62,12 @@ jq -e '
   .layers[0].mediaType == "application/vnd.lepinoid.world-bundle.manifest.v1+json" and
   all(.layers[1:][]; .mediaType == "application/vnd.lepinoid.world-bundle.archive.v1.tar+gzip") and
   .annotations["org.opencontainers.image.revision"] == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" and
-  .annotations["org.opencontainers.image.source"] == "https://github.com/Lepinoid/Worlds" and
+  .annotations["org.opencontainers.image.source"] == "https://github.com/Lepinoid/infra" and
+  .annotations["net.lepinoid.world-source"] == "https://github.com/Lepinoid/Worlds" and
   .annotations["org.opencontainers.image.created"] == "2026-09-10T00:00:00Z" and
-  .annotations["net.lepinoid.build-url"] == "https://example.test/build/1"
+  .annotations["net.lepinoid.build-url"] == "https://example.test/build/1" and
+  .annotations["net.lepinoid.pool-fingerprint"] == "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" and
+  .annotations["net.lepinoid.runtime-revision"] == "0123456789012345678901234567890123456789"
 ' "$oci" >/dev/null || fail 'incorrect OCI metadata'
 printf 'case 1 passed: absent tag pushes and returns digest\n'
 
@@ -89,9 +95,13 @@ printf 'case 4 passed: auth denial fails without push\n'
 FAKE_ORAS_STORE=$work/wrong-type-store
 hex=${digest#sha256:}
 mkdir -p "$FAKE_ORAS_STORE/tags" "$FAKE_ORAS_STORE/blobs/$hex/files"
-printf '%s\n' "$digest" >"$FAKE_ORAS_STORE/tags/$version"
+printf '%s\n' "$digest" >"$FAKE_ORAS_STORE/tags/$tag"
 jq '.artifactType = "application/vnd.example.other"' "$oci" >"$FAKE_ORAS_STORE/blobs/$hex/oci-manifest.json"
 cp "$work/bundle/"* "$FAKE_ORAS_STORE/blobs/$hex/files/"
 expect_failure "$work/bundle"
 printf 'case 5 passed: existing artifact with wrong artifactType is rejected\n'
+
+FAKE_ORAS_STORE=$work/store
+POOL_FINGERPRINT=$(printf 'f%.0s' {1..64}) expect_failure "$work/bundle"
+printf 'case 6 passed: incompatible fingerprint cannot reuse an immutable artifact\n'
 printf 'all publish-world-bundle tests passed\n'

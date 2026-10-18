@@ -25,10 +25,23 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "lepinoid" {
         service  = "http://couchdb.lepinoid.svc.cluster.local:5984"
       },
       {
+        hostname = "pack-dev.lepinoid.net"
+        service  = "http://lepinoid-resourcepack.lepinoid.svc.cluster.local:8082"
+      },
+      {
         service = "http_status:404"
       }
     ]
   }
+}
+
+resource "cloudflare_dns_record" "pack_dev" {
+  zone_id = var.cloudflare_zone_id
+  name    = "pack-dev"
+  content = "${cloudflare_zero_trust_tunnel_cloudflared.lepinoid.id}.cfargotunnel.com"
+  type    = "CNAME"
+  proxied = true
+  ttl     = 1
 }
 
 resource "cloudflare_dns_record" "grafana" {
