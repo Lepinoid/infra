@@ -104,6 +104,7 @@ world_desired_update() {
     local tag=${importer_sha:0:7}
     sed -i "s|image: ghcr.io/lepinoid/lepinoid:[^ ]*|image: ghcr.io/lepinoid/lepinoid:${tag}|" "$repo_root/lepinoid/deployment.yaml" || return 1
     sed -i "s|image: ghcr.io/lepinoid/lepinoid:[^ ]*|image: ghcr.io/lepinoid/lepinoid:${tag}-velocity|" "$repo_root/lepinoid/velocity.yaml" || return 1
+    sed -i -E "/name: LEPINOID_RESOURCE_PACK_URL,/s|https://pack-dev[.]lepinoid[.]net/resourcepack[.]zip([?]runtime=[^\"]*)?|https://pack-dev.lepinoid.net/resourcepack.zip?runtime=${tag}|" "$repo_root/lepinoid/deployment.yaml" || return 1
     sed -i "s|source-sha:.*|source-sha: \"${importer_sha}\"|" "$repo_root/lepinoid/runtime-version.yaml" || return 1
   fi
 }
