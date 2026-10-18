@@ -125,7 +125,7 @@ jobs:
         if: steps.existing.outputs.reuse != 'true'
         with:
           repository: Lepinoid/lepinoid
-          token: ${{ secrets.PAT_TOKEN }}
+          ssh-key: ${{ secrets.LEPINOID_SOURCE_DEPLOY_KEY }}
           ref: ${{ steps.runtime.outputs.sha }}
           path: runtime-source
           persist-credentials: false
