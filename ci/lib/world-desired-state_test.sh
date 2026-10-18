@@ -72,7 +72,7 @@ cmp "$tmp/b1" "$tmp/b2"
 test "$(grep -c 'old' "$tmp/real.yaml")" -eq 0
 
 world_desired_write_configmap "$digest" "$version" "$sha" "$tmp/world.yaml"
-printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: world-versions\ndata:\n  digest: "%s"\n  version: "%s"\n  gitCommitSha: "%s"\n' "$digest" "$version" "$sha" > "$tmp/expected.yaml"
+printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: lepinoid-runtime-worlds\ndata:\n  digest: "%s"\n  version: "%s"\n  gitCommitSha: "%s"\n' "$digest" "$version" "$sha" > "$tmp/expected.yaml"
 cmp "$tmp/world.yaml" "$tmp/expected.yaml"
 world_desired_write_configmap "$digest" '' '' "$tmp/initial.yaml"
 fingerprint=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef

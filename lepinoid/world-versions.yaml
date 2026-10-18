@@ -1,8 +1,10 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: world-versions
+  name: lepinoid-runtime-worlds
 data:
-  digest: "sha256:6f352245b65af801b25e03e3f7592f768d910e0ad12f587e121874e1ab3ee14c"
-  version: "2026.10.14-26f39"
-  gitCommitSha: "26f392afef4d45486f351225d7203c823629a77d"
+  digest: "sha256:d3978d4b3a3ea7f1ca89cd79aef948b9604ba86191b23fb5f86b1cdeff80d026"
+  version: "2026.10.18-430d0"
+  gitCommitSha: "430d04f6711c342d0347dd94baa788977d1e674d"
+  pool-fingerprint: "8913f31f072542c17df685e94ad72768ffed49cb7306b4b06798ff2ab3951f26"
+  importerSha: "b3a78b8edf3d0242514f3273c6e41f078cc0659a"

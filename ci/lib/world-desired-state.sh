@@ -9,7 +9,7 @@ world_desired_write_configmap() {
   [[ -z $git_commit_sha || $git_commit_sha =~ $WORLD_SHA_RE ]] || return 1
   [[ -z $fingerprint || $fingerprint =~ ^[0-9a-f]{64}$ ]] || return 1
   [[ -z $importer_sha || $importer_sha =~ $WORLD_SHA_RE ]] || return 1
-  printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: world-versions\ndata:\n  digest: "%s"\n  version: "%s"\n  gitCommitSha: "%s"\n' \
+  printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: lepinoid-runtime-worlds\ndata:\n  digest: "%s"\n  version: "%s"\n  gitCommitSha: "%s"\n' \
     "$digest" "$version" "$git_commit_sha" > "$out_file"
   if [[ -n $fingerprint && -n $importer_sha ]]; then
     printf '  pool-fingerprint: "%s"\n  importerSha: "%s"\n' "$fingerprint" "$importer_sha" >> "$out_file"
