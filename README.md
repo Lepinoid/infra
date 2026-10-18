@@ -54,6 +54,10 @@ bundle の digest と pool fingerprint は `lepinoid/world-versions.yaml` に記
 
 同じ Worlds／runtime 版の bundle が既にある場合は検証して再利用する。import は Anvil 内部の保存時刻も更新するため、公開済みタグへ変換し直したバイト列を上書きしない。
 
+### ワークフローの認証設定
+
+`world-bundle.yml` が runtime importer のソースを取得できるよう、`Lepinoid/lepinoid` のみにアクセスできる読み取り専用の deploy key を作成し、公開鍵を同リポジトリの Deploy keys に書き込み権限なしで登録する。秘密鍵はこの infra リポジトリの Actions secret `LEPINOID_SOURCE_DEPLOY_KEY` に登録する。`Lepinoid/Worlds` の取得には、引き続き同リポジトリの `contents:read` 権限を持つ Actions secret `PAT_TOKEN` を使用する。
+
 ### 配布対象ワールドの追加
 
 1. `lepinoid/world-sync-config.yaml` の `config.json` を変更する。
