@@ -9,9 +9,19 @@ spec:
   type: LoadBalancer
   loadBalancerClass: tailscale
   selector:
-    app: lepinoid
+    app.kubernetes.io/name: lepinoid-pool-velocity
   ports:
     - name: minecraft
       port: 25565
       targetPort: minecraft
       protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lepinoid-resourcepack
+spec:
+  selector:
+    app.kubernetes.io/name: lepinoid-runtime-pool
+  ports:
+    - {name: http, port: 8082, targetPort: resourcepack}

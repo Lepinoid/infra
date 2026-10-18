@@ -1,11 +1,11 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: lepinoid-db
+  name: lepinoid-runtime-db
 spec:
   type: ClusterIP
   selector:
-    app: lepinoid-db
+    app: lepinoid-runtime-db
   ports:
     - name: postgres
       port: 5432

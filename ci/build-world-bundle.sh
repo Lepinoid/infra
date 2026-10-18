@@ -13,10 +13,11 @@ fail() {
   exit 1
 }
 
-[[ $# == 3 ]] || fail "Usage: $0 <worlds-checkout-dir> <config.yaml> <out-dir>"
+[[ $# == 3 || $# == 4 ]] || fail "Usage: $0 <worlds-checkout-dir> <config.yaml> <out-dir> [content-root]"
 w=$1
 config=$2
 out=$3
+content_root=${4:-$w}
 names=$(world_config_enabled_names "$config")
 commit_sha=$(git -C "$w" rev-parse HEAD)
 [[ "$commit_sha" =~ ^[0-9a-f]{40}$ ]] || fail 'HEAD must be a 40-character Git SHA'
@@ -30,7 +31,7 @@ worlds='[]'
 while IFS= read -r name; do
   git -C "$w" ls-tree -d HEAD -- "$name" | grep -q . \
     || fail "World directory not present in HEAD: $name"
-  test -f "$w/$name/level.dat" || fail "Missing level.dat: $name"
+  test -f "$content_root/$name/level.dat" || fail "Missing level.dat: $name"
   entries=$(git -C "$w" ls-tree -r HEAD -- "$name")
   while IFS=$' \t' read -r mode rest; do
     case "$mode" in
@@ -40,7 +41,7 @@ while IFS= read -r name; do
   done <<< "$entries"
 
   tar --format=gnu --sort=name --mtime="@$cts" --owner=0 --group=0 --numeric-owner \
-      --mode='u=rwX,go=rX' --no-acls --no-xattrs -C "$w/$name" -cf - . \
+      --mode='u=rwX,go=rX' --no-acls --no-xattrs -C "$content_root/$name" -cf - . \
     | gzip -n -6 > "$out/$name.tar.gz"
 
   listing=$(tar -tzvf "$out/$name.tar.gz")

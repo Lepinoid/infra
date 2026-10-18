@@ -6,15 +6,18 @@ script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$script_dir/lib/world-manifest.sh"
 [[ $# == 1 ]] || { printf 'usage: %s <bundle-dir>\n' "$0" >&2; exit 1; }
 bundle=$1
-REPOSITORY=${REPOSITORY:-ghcr.io/lepinoid/world-bundle}
+REPOSITORY=${REPOSITORY:-ghcr.io/lepinoid/runtime-world-bundle}
 ORAS_BIN=${ORAS_BIN:-oras}
 : "${GHCR_USER:?}" "${GHCR_TOKEN:?}"
 fail() { printf '%s\n' "$*" >&2; exit 1; }
+[[ ${POOL_FINGERPRINT:-} =~ ^[0-9a-f]{64}$ ]] || fail 'POOL_FINGERPRINT must be a SHA-256 fingerprint'
+[[ ${RUNTIME_REVISION:-} =~ ^[0-9a-f]{40}$ ]] || fail 'RUNTIME_REVISION must be a full Git SHA'
 m=$(find "$bundle" -maxdepth 1 -name manifest.json)
 [[ -n $m ]] || fail 'missing manifest.json'
 world_manifest_validate "$bundle/manifest.json" || fail 'invalid manifest.json'
 version=$(jq -r .version "$bundle/manifest.json")
-ref=$REPOSITORY:$version
+# A new importer can produce different bytes from the same authoring revision.
+ref=$REPOSITORY:$version-${RUNTIME_REVISION:0:7}
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 artifact_type=application/vnd.lepinoid.world-bundle.v1
@@ -28,9 +31,12 @@ if "$ORAS_BIN" manifest fetch "$ref" >"$work/oci.json" 2>"$work/fetch-error"; th
   pinned=$REPOSITORY@$digest
   "$ORAS_BIN" manifest fetch "$pinned" >"$work/oci.json"
   layer_count=$(jq '.worlds | length + 1' "$bundle/manifest.json")
-  jq -e --arg type "$artifact_type" --argjson count "$layer_count" '
-    .artifactType == $type and (.layers | length == $count)
-  ' "$work/oci.json" >/dev/null || fail 'existing artifactType or layer count mismatch'
+  jq -e --arg type "$artifact_type" --argjson count "$layer_count" \
+    --arg fingerprint "$POOL_FINGERPRINT" --arg runtime "$RUNTIME_REVISION" '
+    .artifactType == $type and (.layers | length == $count) and
+    .annotations["net.lepinoid.pool-fingerprint"] == $fingerprint and
+    .annotations["net.lepinoid.runtime-revision"] == $runtime
+  ' "$work/oci.json" >/dev/null || fail 'existing artifact type, layers or runtime metadata mismatch'
   mkdir "$work/pulled"
   "$ORAS_BIN" pull -o "$work/pulled" "$pinned" >&2
   world_manifest_equal "$bundle/manifest.json" "$work/pulled/manifest.json" ||
@@ -45,7 +51,7 @@ if "$ORAS_BIN" manifest fetch "$ref" >"$work/oci.json" 2>"$work/fetch-error"; th
   printf 'reusing existing immutable artifact\n' >&2
 else
   # Authentication/transport failures must not be mistaken for an absent tag.
-  if ! grep -Eqi 'MANIFEST_UNKNOWN|manifest unknown|not found|404' "$work/fetch-error"; then
+  if ! grep -Eqi 'MANIFEST_UNKNOWN|manifest unknown|(^|: )not found$|404 Not Found' "$work/fetch-error"; then
     cat "$work/fetch-error" >&2
     exit 1
   fi
@@ -54,6 +60,8 @@ else
     args+=("$archive:$archive_mt")
   done < <(jq -r '.worlds[].archivePath' "$bundle/manifest.json")
   args+=(--annotation "org.opencontainers.image.revision=$(jq -r .gitCommitSha "$bundle/manifest.json")"
+    --annotation "net.lepinoid.pool-fingerprint=$POOL_FINGERPRINT"
+    --annotation "net.lepinoid.runtime-revision=$RUNTIME_REVISION"
     --annotation 'org.opencontainers.image.source=https://github.com/Lepinoid/Worlds'
     --annotation "org.opencontainers.image.created=$(jq -r .createdAt "$bundle/manifest.json")")
   if [[ -n ${BUILD_URL:-} ]]; then

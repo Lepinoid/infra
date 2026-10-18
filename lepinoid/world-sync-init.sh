@@ -29,7 +29,7 @@ on_exit() {
     printf 'RESULT=%s%s\n' "$RESULT" "${DETAIL:-}"
     exit 0
   fi
-  log ERROR "operation failed rc=$rc; server startup will continue"
+  log ERROR "operation failed rc=$rc; refusing server startup"
   if [ "$PHASE" = switch ]; then
     log ERROR "best-effort restore active=$ACTIVE switched=$SWITCHED moved-aside=$BACKED_UP"
     if [ -n "$ACTIVE" ] && [ -d "$WORK_DIR/old-$ACTIVE" ]; then
@@ -56,7 +56,7 @@ on_exit() {
   done
   rm -rf "$WORK_DIR/pull"
   printf 'RESULT=%s\n' "$RESULT"
-  exit 0
+  exit 1
 }
 trap on_exit EXIT
 

@@ -3,12 +3,17 @@ WORLD_VERSION_RE='^[0-9]{4}\.[0-9]{2}\.[0-9]{2}-[0-9a-f]{5}$'
 WORLD_SHA_RE='^[0-9a-f]{40}$'
 
 world_desired_write_configmap() {
-  local digest=$1 version=$2 git_commit_sha=$3 out_file=$4
+  local digest=$1 version=$2 git_commit_sha=$3 out_file=$4 fingerprint=${5:-} importer_sha=${6:-}
   [[ $digest =~ $WORLD_DIGEST_RE ]] || return 1
   [[ -z $version || $version =~ $WORLD_VERSION_RE ]] || return 1
   [[ -z $git_commit_sha || $git_commit_sha =~ $WORLD_SHA_RE ]] || return 1
+  [[ -z $fingerprint || $fingerprint =~ ^[0-9a-f]{64}$ ]] || return 1
+  [[ -z $importer_sha || $importer_sha =~ $WORLD_SHA_RE ]] || return 1
   printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: world-versions\ndata:\n  digest: "%s"\n  version: "%s"\n  gitCommitSha: "%s"\n' \
     "$digest" "$version" "$git_commit_sha" > "$out_file"
+  if [[ -n $fingerprint && -n $importer_sha ]]; then
+    printf '  pool-fingerprint: "%s"\n  importerSha: "%s"\n' "$fingerprint" "$importer_sha" >> "$out_file"
+  fi
 }
 
 world_desired_set_annotation() {
@@ -55,6 +60,7 @@ world_desired_set_annotation() {
     }
     function print_key(indent) {
       print spaces_of(indent) "lepinoid.dev/world-bundle-digest: \"" digest "\""
+      found_key = 1
     }
     function spaces_of(count,   i, s) {
       s = ""
@@ -72,10 +78,10 @@ world_desired_set_annotation() {
         while (substr($0, n + 1, 1) == " ") n++
         content = substr($0, n + 1)
       }
-      $0 ~ /^      metadata:[[:space:]]*$/ && in_template {
+      $0 ~ /^    metadata:[[:space:]]*$/ && in_template {
         print
-        printf "        annotations:\n"
-        printf "          lepinoid.dev/world-bundle-digest: \"%s\"\n", digest
+        printf "      annotations:\n"
+        printf "        lepinoid.dev/world-bundle-digest: \"%s\"\n", digest
         done = 1
         next
       }
@@ -87,7 +93,17 @@ world_desired_set_annotation() {
 }
 
 world_desired_update() {
-  local digest=$1 version=$2 git_commit_sha=$3 repo_root=$4
-  world_desired_write_configmap "$digest" "$version" "$git_commit_sha" "$repo_root/lepinoid/world-versions.yaml" || return 1
-  world_desired_set_annotation "$digest" "$repo_root/lepinoid/deployment.yaml"
+  local digest=$1 version=$2 git_commit_sha=$3 repo_root=$4 fingerprint=$5 importer_sha=$6
+  [[ $fingerprint =~ ^[0-9a-f]{64}$ && $importer_sha =~ $WORLD_SHA_RE ]] || return 1
+  world_desired_write_configmap "$digest" "$version" "$git_commit_sha" "$repo_root/lepinoid/world-versions.yaml" "$fingerprint" "$importer_sha" || return 1
+  world_desired_set_annotation "$digest" "$repo_root/lepinoid/deployment.yaml" || return 1
+  if [[ -f "$repo_root/lepinoid/velocity.yaml" ]]; then
+    world_desired_set_annotation "$digest" "$repo_root/lepinoid/velocity.yaml" || return 1
+  fi
+  if [[ -f "$repo_root/lepinoid/runtime-version.yaml" ]]; then
+    local tag=${importer_sha:0:7}
+    sed -i "s|image: ghcr.io/lepinoid/lepinoid:[^ ]*|image: ghcr.io/lepinoid/lepinoid:${tag}|" "$repo_root/lepinoid/deployment.yaml" || return 1
+    sed -i "s|image: ghcr.io/lepinoid/lepinoid:[^ ]*|image: ghcr.io/lepinoid/lepinoid:${tag}-velocity|" "$repo_root/lepinoid/velocity.yaml" || return 1
+    sed -i "s|source-sha:.*|source-sha: \"${importer_sha}\"|" "$repo_root/lepinoid/runtime-version.yaml" || return 1
+  fi
 }

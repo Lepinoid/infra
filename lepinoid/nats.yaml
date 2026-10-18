@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: Service
+metadata: {name: lepinoid-pool-nats}
+spec:
+  selector: {app.kubernetes.io/name: lepinoid-pool-nats}
+  ports: [{name: nats, port: 4222, targetPort: nats}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: lepinoid-pool-nats}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app.kubernetes.io/name: lepinoid-pool-nats}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lepinoid-pool-nats
+        lepinoid.net/pool: dev
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: nats
+          image: nats:2.11.8-alpine
+          imagePullPolicy: IfNotPresent
+          args: [-c, /run/nats/nats.conf]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          ports: [{name: nats, containerPort: 4222}]
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 200m, memory: 256Mi}
+          env:
+            - name: NATS_USER_0
+              valueFrom: {secretKeyRef: {name: lepinoid-runtime-secrets, key: presence-0.username}}
+            - name: NATS_PASSWORD_0
+              valueFrom: {secretKeyRef: {name: lepinoid-runtime-secrets, key: presence-0.password}}
+            - name: NATS_USER_1
+              valueFrom: {secretKeyRef: {name: lepinoid-runtime-secrets, key: presence-1.username}}
+            - name: NATS_PASSWORD_1
+              valueFrom: {secretKeyRef: {name: lepinoid-runtime-secrets, key: presence-1.password}}
+            - name: NATS_USER_2
+              valueFrom: {secretKeyRef: {name: lepinoid-runtime-secrets, key: presence-2.username}}
+            - name: NATS_PASSWORD_2
+              valueFrom: {secretKeyRef: {name: lepinoid-runtime-secrets, key: presence-2.password}}
+          startupProbe:
+            tcpSocket: {port: nats}
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket: {port: nats}
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket: {port: nats}
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          volumeMounts:
+            - {name: configuration, mountPath: /run/nats, readOnly: true}
+      volumes:
+        - name: configuration
+          configMap: {name: lepinoid-pool-nats}

@@ -33,6 +33,7 @@ spec:
     spec: {}
 EOF
 world_desired_set_annotation "$digest" "$tmp/no-annotations.yaml"
+grep -qxF "        lepinoid.dev/world-bundle-digest: \"$digest\"" "$tmp/no-annotations.yaml"
 
 # Real-file-structure fixture: mirror of the actual lepinoid/deployment.yaml nesting
 # (2-space template, 4-space metadata, 6-space annotations, 8-space key) with a
@@ -74,5 +75,31 @@ world_desired_write_configmap "$digest" "$version" "$sha" "$tmp/world.yaml"
 printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: world-versions\ndata:\n  digest: "%s"\n  version: "%s"\n  gitCommitSha: "%s"\n' "$digest" "$version" "$sha" > "$tmp/expected.yaml"
 cmp "$tmp/world.yaml" "$tmp/expected.yaml"
 world_desired_write_configmap "$digest" '' '' "$tmp/initial.yaml"
+fingerprint=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+world_desired_write_configmap "$digest" "$version" "$sha" "$tmp/runtime.yaml" "$fingerprint" "$sha"
+grep -qxF "  pool-fingerprint: \"$fingerprint\"" "$tmp/runtime.yaml"
+grep -qxF "  importerSha: \"$sha\"" "$tmp/runtime.yaml"
+mkdir -p "$tmp/repo/lepinoid"
+cp "$tmp/real.yaml" "$tmp/repo/lepinoid/deployment.yaml"
+cp "$tmp/no-annotations.yaml" "$tmp/repo/lepinoid/velocity.yaml"
+cat >> "$tmp/repo/lepinoid/deployment.yaml" <<'EOF'
+      initContainers:
+        - image: ghcr.io/lepinoid/plugin-updater:keep
+        - image: ghcr.io/lepinoid/lepinoid:old-runtime
+      containers:
+        - image: ghcr.io/lepinoid/lepinoid:old-runtime
+EOF
+cat >> "$tmp/repo/lepinoid/velocity.yaml" <<'EOF'
+      containers:
+        - image: ghcr.io/lepinoid/lepinoid:old-velocity
+EOF
+printf 'data:\n  source-sha: "old"\n' > "$tmp/repo/lepinoid/runtime-version.yaml"
+world_desired_update "$digest" "$version" "$sha" "$tmp/repo" "$fingerprint" "$sha"
+cmp "$tmp/runtime.yaml" "$tmp/repo/lepinoid/world-versions.yaml"
+grep -qxF "        lepinoid.dev/world-bundle-digest: \"$digest\"" "$tmp/repo/lepinoid/velocity.yaml"
+test "$(grep -c "image: ghcr.io/lepinoid/lepinoid:${sha:0:7}$" "$tmp/repo/lepinoid/deployment.yaml")" -eq 2
+grep -q 'image: ghcr.io/lepinoid/plugin-updater:keep' "$tmp/repo/lepinoid/deployment.yaml"
+grep -q "image: ghcr.io/lepinoid/lepinoid:${sha:0:7}-velocity$" "$tmp/repo/lepinoid/velocity.yaml"
+grep -qxF "  source-sha: \"$sha\"" "$tmp/repo/lepinoid/runtime-version.yaml"
 if command -v yq >/dev/null; then yq '.' "$tmp/deployment.yaml" >/dev/null; elif command -v python3 >/dev/null && python3 -c 'import yaml' 2>/dev/null; then python3 -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1]))' "$tmp/deployment.yaml"; fi
 echo "all world-desired-state tests passed"

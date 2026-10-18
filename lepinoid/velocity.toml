@@ -1,0 +1,25 @@
+config-version = "2.9"
+bind = "0.0.0.0:25565"
+motd = "Lepinoid Dev"
+show-max-players = 24
+online-mode = true
+force-key-authentication = true
+player-info-forwarding-mode = "modern"
+forwarding-secret-file = "/run/forwarding/secret"
+enable-player-address-logging = false
+
+[servers]
+# Pool routing and dynamic backend registration belong to the pool plugin.
+try = []
+
+[forced-hosts]
+
+[advanced]
+connection-timeout = 5000
+read-timeout = 30000
+log-command-executions = false
+failover-on-unexpected-server-disconnect = false
+accepts-transfers = false
+
+[query]
+enabled = false
