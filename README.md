@@ -44,7 +44,7 @@ DB は `lepinoid-runtime-db` Service 経由の PostgreSQL 16 を使い、新規 
 
 転送・forwarding・制作 seed・各台の NATS 認証情報は `lepinoid/runtime-secrets.sops.yaml`、参加 UUID の認証は既存の `lepinoid/auth-secret.sops.yaml` と `Lepinoid/OperatorInfo` の `operators.yml` で管理する。制作 seed は DB と組で保持する。
 
-runtime が内蔵する resource pack を `lepinoid-resourcepack:8082` の `/resourcepack.zip` で配信する。Cloudflare Tunnel の `pack-dev.lepinoid.net` をこの Service へ向け、公開 URL `https://pack-dev.lepinoid.net/resourcepack.zip` をクライアントへ案内する。
+runtime が内蔵する resource pack を `lepinoid-resourcepack:8082` の `/resourcepack.zip` で配信する。Cloudflare Tunnel の `pack-dev.lepinoid.net` をこの Service へ向け、公開 URL `https://pack-dev.lepinoid.net/resourcepack.zip?runtime=<runtime SHA7>` をクライアントへ案内する。Cloudflare の旧版キャッシュを避けるため、release 更新時は image・world と同じ commit で URL の runtime 版も切り替える。
 
 ## ワールド配布 (lepinoid-dev)
 
