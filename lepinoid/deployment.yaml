@@ -128,6 +128,10 @@ spec:
             - {name: LEPINOID_WORLD, value: TERRESTRIAL}
             - {name: LEPINOID_WORLD_PATH, value: /worlds/terrestrial}
             - {name: LEPINOID_SECOND_WORLD_PATH, value: /worlds/lv1}
+            # Worlds の各 world 直下の areas.json（建築サーバーのエリア編集 GUI が保存）は bundle に同梱される。
+            # ファイルがない world は runtime が ABSENT としてログに出し、エリア機能だけを無効にする。
+            - {name: LEPINOID_TERRESTRIAL_AREAS_PATH, value: /worlds/terrestrial/areas.json}
+            - {name: LEPINOID_LV1_AREAS_PATH, value: /worlds/lv1/areas.json}
             - {name: LEPINOID_WORLD_SCRATCH, value: /scratch}
             - {name: LEPINOID_AUTHENTICATION, value: velocity}
             - name: LEPINOID_VELOCITY_SECRET
