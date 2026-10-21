@@ -117,6 +117,9 @@ spec:
             - {name: JAVA_TOOL_OPTIONS, value: "-Xmx2g -XX:ActiveProcessorCount=2 -XX:+ExitOnOutOfMemoryError"}
             - name: LEPINOID_INSTANCE_ID
               valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            # dev 配備なので開発専用の管理コマンド（debug・sign add|remove・/give・/summon など）を登録する。
+            # 未設定では prod として起動する。値は prod / dev のみで、それ以外は起動エラーになる。
+            - {name: LEPINOID_RUNTIME_PROFILE, value: dev}
             - {name: LEPINOID_BIND_HOST, value: "0.0.0.0"}
             - {name: LEPINOID_PORT, value: "25565"}
             - {name: LEPINOID_STATUS_BIND_HOST, value: "0.0.0.0"}
