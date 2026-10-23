@@ -17,7 +17,7 @@ spec:
   template:
     metadata:
       annotations:
-        lepinoid.dev/world-bundle-digest: "sha256:7e4e176c0dbd7405aa6d760c1d9d90c23ce3186a16c7b7c1d3f16f702efbc5b3"
+        lepinoid.dev/world-bundle-digest: "sha256:973888ccf94a8246a0768808fd9e47f2ef514e905ca37f6caeb6234a20bc3d40"
       labels:
         app.kubernetes.io/name: lepinoid-pool-velocity
         lepinoid.net/pool: dev
@@ -36,7 +36,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: velocity
-          image: ghcr.io/lepinoid/lepinoid:8e7a479-velocity
+          image: ghcr.io/lepinoid/lepinoid:1471234-velocity
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
