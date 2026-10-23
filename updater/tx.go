@@ -425,9 +425,25 @@ func (t *tx) observePlayers() (players.State, error) {
 	return players.Decide(players.RCON(rconOut), players.Monitor(monitorOut)), nil
 }
 
+const maintenanceWaitingMessage = "プラグイン更新のメンテナンスが待機中です。全員がログアウトすると自動で更新が始まります。"
+
+// notifyMaintenanceWaiting はメンテナンスがプレイヤー待ちであることを tellraw で通知する。
+// 通知は best-effort であり、失敗してもトランザクションは止めない。
+func (t *tx) notifyMaintenanceWaiting() {
+	payload, err := json.Marshal(map[string]string{"text": maintenanceWaitingMessage, "color": "yellow"})
+	if err == nil {
+		_, err = t.rcon("tellraw", "@a", string(payload))
+	}
+	if err != nil && t.engine != nil && t.engine.Log != nil {
+		fmt.Fprintf(t.engine.Log, "updater: maintenance waiting notification failed: %v\n", err)
+	}
+}
+
 func (t *tx) b3EmptyPlayers() error {
 	deadline := t.now().Add(10 * time.Minute)
 	var zeroSince time.Time
+	// B3 は 1 Job につき 1 回だけ実行されるので、これで通知は Job ごとに 1 回になる。
+	notified := false
 	for {
 		if !t.now().Before(deadline) {
 			return t.suspend("checkpoint-timeout")
@@ -441,6 +457,10 @@ func (t *tx) b3EmptyPlayers() error {
 			return t.suspend("player-count-unknown")
 		case players.NonZero:
 			zeroSince = time.Time{}
+			if !notified {
+				notified = true
+				t.notifyMaintenanceWaiting()
+			}
 		case players.Zero:
 			if zeroSince.IsZero() {
 				zeroSince = t.now()
