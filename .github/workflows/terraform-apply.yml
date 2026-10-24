@@ -1,15 +1,12 @@
 name: OpenTofu Apply
 
 on:
-  issue_comment:
+  # issue_comment は任意の人が起動できるが、apply-from-comment は turtton の /tf-apply コメントに限って実行する。
+  issue_comment: # zizmor: ignore[dangerous-triggers]
     types: [created]
   workflow_dispatch:
 
-permissions:
-  contents: write
-  pull-requests: write
-  issues: write
-  statuses: write
+permissions: {}
 
 concurrency:
   group: terraform-apply
@@ -23,6 +20,11 @@ jobs:
       github.event.comment.body == '/tf-apply' &&
       github.event.comment.user.login == 'turtton'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      statuses: write
     env:
       TF_VAR_state_encryption_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
       TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -53,12 +55,14 @@ jobs:
 
       - name: Set pending commit status
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        env:
+          PR_SHA: ${{ steps.pr.outputs.sha }}
         with:
           script: |
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              sha: '${{ steps.pr.outputs.sha }}',
+              sha: process.env.PR_SHA,
               state: 'pending',
               context: 'OpenTofu Apply',
               description: 'Apply is running...',
@@ -69,6 +73,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ steps.pr.outputs.ref }}
+          persist-credentials: false
 
       - name: Setup OpenTofu
         uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f # v1.0.8
@@ -95,6 +100,9 @@ jobs:
       - name: Commit encrypted state
         if: always()
         working-directory: terraform
+        env:
+          PR_REF: ${{ steps.pr.outputs.ref }}
+          PUSH_TOKEN: ${{ github.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -103,8 +111,9 @@ jobs:
             echo "No state changes to commit"
           else
             git commit -m "Update encrypted terraform state"
-            git pull --rebase origin ${{ steps.pr.outputs.ref }}
-            git push origin HEAD:${{ steps.pr.outputs.ref }}
+            auth="http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 -w0)"
+            git -c "$auth" pull --rebase origin "$PR_REF"
+            git -c "$auth" push origin "HEAD:$PR_REF"
           fi
 
       - name: Comment apply result on PR
@@ -147,6 +156,7 @@ jobs:
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
           APPLY_EXIT_CODE: ${{ steps.apply.outputs.exit_code }}
+          PR_SHA: ${{ steps.pr.outputs.sha }}
         with:
           script: |
             const exitCode = process.env.APPLY_EXIT_CODE;
@@ -155,7 +165,7 @@ jobs:
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              sha: '${{ steps.pr.outputs.sha }}',
+              sha: process.env.PR_SHA,
               state: state,
               context: 'OpenTofu Apply',
               description: description,
@@ -165,6 +175,8 @@ jobs:
   apply-manual:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
       TF_VAR_state_encryption_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
       TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -173,6 +185,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ github.ref_name }}
+          persist-credentials: false
 
       - name: Setup OpenTofu
         uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f # v1.0.8
@@ -188,6 +201,8 @@ jobs:
       - name: Commit encrypted state
         if: always()
         working-directory: terraform
+        env:
+          PUSH_TOKEN: ${{ github.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -196,6 +211,7 @@ jobs:
             echo "No state changes to commit"
           else
             git commit -m "Update encrypted terraform state"
-            git pull --rebase origin ${{ github.ref_name }}
-            git push origin HEAD:${{ github.ref_name }}
+            auth="http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 -w0)"
+            git -c "$auth" pull --rebase origin "$GITHUB_REF_NAME"
+            git -c "$auth" push origin "HEAD:$GITHUB_REF_NAME"
           fi
