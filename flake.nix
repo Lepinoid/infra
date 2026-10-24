@@ -21,6 +21,12 @@
             bashInteractive
             # Kubernetes
             kubectl
+            # Static checks (CI と同じチェックをローカルで実行する。CI での版は ci/install-tools.sh で固定)
+            kustomize
+            kubeconform
+            yq-go
+            pinact
+            zizmor
             # Secret management
             sops
             age

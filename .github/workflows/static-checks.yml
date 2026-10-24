@@ -1,0 +1,56 @@
+name: Static checks
+
+# パスで絞らずに全 PR で動かす（必須チェックにしても、対象外の PR が保留のままにならないように）。
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: static-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  manifests:
+    name: Manifests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Install pinned tools
+        run: |
+          ci/install-tools.sh "$RUNNER_TEMP/bin" kustomize kubeconform yq
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Check manifests
+        run: ci/check-manifests.sh
+
+  workflows:
+    name: GitHub Actions workflows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Install pinned tools
+        run: |
+          ci/install-tools.sh "$RUNNER_TEMP/bin" pinact
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # action を commit SHA で固定し、併記した版のコメントがその SHA と一致することを確かめる。
+      - name: pinact
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: pinact run --check --verify
+      - name: zizmor
+        uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b # v0.8.0
+        with:
+          version: 1.31.1
+          advanced-security: false
+          annotations: true

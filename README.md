@@ -12,6 +12,8 @@ Flux CD がこのリポジトリを監視し、`lepinoid` namespace にリソー
 | **[LiveSync Bridge](livesync-bridge/README.md)** | CouchDB と Git リポジトリ間の vault 同期ブリッジ。Obsidian からの Git 操作・復旧手順 |
 | **Cloudflared** | Cloudflare Tunnel による外部アクセス（token ベース） |
 | **Grafana** | Prometheus 接続のモニタリングダッシュボード。Cloudflare Access 認証 |
+| **Dev server (lepinoid)** | Velocity + Minestom runtime pool の dev サーバーとワールド配布（下記） |
+| **[Build server](build-server/README.md)** | PaperMC のビルドサーバー。LepinoidTools は [plugin-updater](updater/README.md) が更新する |
 
 ## Secret Management
 
@@ -31,6 +33,42 @@ sops path/to/secret.sops.yaml
 
 1. マニフェストを編集・commit・push
 2. Flux CD が自動で reconcile し、`lepinoid` namespace にデプロイ
+
+## CI
+
+| Workflow | 実行タイミング | 内容 |
+|----------|----------------|------|
+| `static-checks.yml` | すべての PR と main への push | マニフェストと workflow の静的チェック（下記） |
+| `shell-tests.yml` | `ci/**`・`lepinoid/*.sh` の変更 | `ci/lib/*_test.sh` と shell の構文チェック |
+| `plugin-updater-tests.yml` | `updater/**` の変更 | plugin-updater の `go test` / `go vet` |
+| `terraform-check.yml` | `terraform/**` の変更 | `tofu plan` の結果を PR にコメント |
+
+`static-checks.yml` はパスで絞らずに動くため、branch protection の必須チェックにできる。
+
+### Static checks / Manifests (`ci/check-manifests.sh`)
+
+1. `kustomize build .` が通り、出力と手動適用のマニフェスト（`kustomization.yaml` に含めないもの）が kubeconform の strict 検証に通る。対象の Kubernetes の版と、検証しない CRD（HelmRelease・HelmRepository・CiliumNetworkPolicy）は `ci/lib/manifest-checks.sh` で指定する
+2. Pod を作る全コンテナ（initContainers を含む）に `requests` / `limits` の `cpu` と `memory` がある
+3. `ghcr.io/lepinoid/plugin-updater` が `<tag>@sha256:<digest>` で固定され、digest で固定した同じ image が同じトップレベルディレクトリ内で同じ参照になっている
+4. `*.sops.yaml` が SOPS で暗号化済み（age の受信者と MAC があり、`data` / `stringData` の値がすべて `ENC[...]`）で、それ以外のファイルに値を持つ Secret がない
+
+### Static checks / GitHub Actions workflows
+
+- [pinact](https://github.com/suzuki-shunsuke/pinact): `pinact run --check --verify` で、action が commit SHA で固定され、併記した版のコメントがその SHA と一致することを確認する。固定やコメントの付与は `pinact run` で行う
+- [zizmor](https://github.com/zizmorcore/zizmor): workflow のセキュリティ監査（template injection、過剰な権限、認証情報の残留など）。抑制する場合は該当行に `# zizmor: ignore[<audit>]` と理由を書く
+
+### ローカルでの実行
+
+Nix の devShell に必要なツールが入っている。CI で使う版と sha256 は `ci/install-tools.sh` で固定しており、devShell の版とは異なることがある。
+
+```bash
+ci/check-manifests.sh                                    # Manifests
+bash ci/lib/manifest-checks_test.sh                      # チェック自体のテスト
+GITHUB_TOKEN=$(gh auth token) pinact run --check --verify
+GH_TOKEN=$(gh auth token) zizmor .
+```
+
+kubeconform は Kubernetes のスキーマを GitHub から取得するため、ネットワークが必要。
 
 ## Dev server (lepinoid-dev)
 
