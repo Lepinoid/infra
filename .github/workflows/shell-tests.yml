@@ -19,11 +19,15 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
       - name: Install busybox
         run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends busybox-static
+      - name: Install pinned tools
+        run: |
+          ci/install-tools.sh "$RUNNER_TEMP/bin" yq
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Syntax check (bash -n)
         run: |
           bash -n ci/*.sh ci/lib/*.sh ci/lib/*_test.sh
