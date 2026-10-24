@@ -32,7 +32,7 @@ jobs:
       packages: write
     steps:
       # AC8: Fetch latest infra main after acquiring the concurrency slot to serialize desired-state updates.
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: main
           persist-credentials: false
@@ -73,7 +73,7 @@ jobs:
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
       # PAT_TOKEN needs Lepinoid/Worlds contents:read (owner-managed, external prerequisite).
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           repository: Lepinoid/Worlds
           token: ${{ secrets.PAT_TOKEN }}
@@ -121,7 +121,7 @@ jobs:
           docker manifest inspect "ghcr.io/lepinoid/lepinoid:$tag" >/dev/null
           docker manifest inspect "ghcr.io/lepinoid/lepinoid:$tag-velocity" >/dev/null
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         if: steps.existing.outputs.reuse != 'true'
         with:
           repository: Lepinoid/lepinoid
@@ -132,14 +132,14 @@ jobs:
 
       - name: Set up JDK 21
         if: steps.existing.outputs.reuse != 'true'
-        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
         with:
           distribution: temurin
           java-version: 21
 
       - name: Set up Gradle
         if: steps.existing.outputs.reuse != 'true'
-        uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1
+        uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
 
       - name: Import offline authoring worlds and fingerprint runtime inputs
         if: steps.existing.outputs.reuse != 'true'
