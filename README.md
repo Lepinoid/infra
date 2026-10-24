@@ -41,7 +41,12 @@ sops path/to/secret.sops.yaml
 | `static-checks.yml` | すべての PR と main への push | マニフェストと workflow の静的チェック（下記） |
 | `shell-tests.yml` | `ci/**`・`lepinoid/*.sh` の変更 | `ci/lib/*_test.sh` と shell の構文チェック |
 | `plugin-updater-tests.yml` | `updater/**` の変更 | plugin-updater の `go test` / `go vet` |
-| `terraform-check.yml` | `terraform/**` の変更 | `tofu plan` の結果を PR にコメント |
+| `terraform-check.yml` | Terraform・関連 workflow の変更 PR | Secret を使わない `tofu fmt` / `tofu validate` |
+| `terraform-apply.yml` | `turtton` が `main` から手動実行 | plan の件数確認後、保存した plan を apply して暗号化 state を更新 |
+
+OpenTofu の本番変更は PR をマージ後、Actions の **OpenTofu Apply** で `main` の
+`mode=plan` を実行し、結果を確認してから `mode=apply` を実行する。
+PR コメントの `/tf-apply` は使用しない。属性値を含む詳細 plan が必要な場合はローカルで確認する。
 
 `static-checks.yml` はパスで絞らずに動くため、branch protection の必須チェックにできる。
 
