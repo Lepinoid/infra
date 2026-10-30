@@ -3,4 +3,4 @@ kind: ConfigMap
 metadata:
   name: lepinoid-runtime-version
 data:
-  source-sha: "c261984d281c2baf68c302ab57fcf30d94857d18"
+  source-sha: "dc9e48e3e9268ceefab71b8edc7565c685335a86"
