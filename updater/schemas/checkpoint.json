@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lepinoid.dev/schemas/updater/checkpoint.json",
+  "title": "Durable updater checkpoint request and result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "transactionId", "podUid", "requestedAt", "state", "operationId", "startedAt", "completedAt", "pushedCommitSha"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "transactionId": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "podUid": {"type": "string", "minLength": 1},
+    "requestedAt": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "state": {"enum": ["requesting", "accepted", "succeeded", "failed", "rejected"]},
+    "operationId": {"type": ["string", "null"], "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "startedAt": {"type": ["string", "null"], "format": "date-time", "pattern": "Z$"},
+    "completedAt": {"type": ["string", "null"], "format": "date-time", "pattern": "Z$"},
+    "pushedCommitSha": {"type": ["string", "null"], "pattern": "^[0-9a-fA-F]{40}$"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"state": {"enum": ["requesting", "rejected"]}}},
+      "then": {"properties": {"operationId": {"type": "null"}}},
+      "else": {"properties": {"operationId": {"type": "string"}}}
+    },
+    {
+      "if": {"properties": {"state": {"const": "succeeded"}}},
+      "then": {"properties": {"startedAt": {"type": "string"}, "completedAt": {"type": "string"}, "pushedCommitSha": {"type": "string"}}},
+      "else": {"properties": {"startedAt": {"type": "null"}, "completedAt": {"type": "null"}, "pushedCommitSha": {"type": "null"}}}
+    }
+  ]
+}

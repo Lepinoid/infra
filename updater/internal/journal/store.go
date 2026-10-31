@@ -144,7 +144,7 @@ func (s Store) Inspect() (Inventory, error) {
 }
 
 func (s Store) Init() error {
-	for _, dir := range []string{"staging", "backup", "journal/.blocking", "recovery", "archive/blocking"} {
+	for _, dir := range []string{"staging", "backup", "checkpoint", "journal/.blocking", "recovery", "archive/blocking"} {
 		if err := os.MkdirAll(s.Path(dir), 0755); err != nil {
 			return err
 		}

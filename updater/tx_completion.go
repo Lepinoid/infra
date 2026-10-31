@@ -271,6 +271,20 @@ func (t *tx) archiveTransaction() error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	checkpoint := t.store.Path("checkpoint", t.j.TransactionID)
+	if _, err := os.Lstat(checkpoint); err == nil {
+		if _, err := t.loadCheckpoint(); err != nil {
+			return err
+		}
+		if err := t.engine.Fence.Check(t.ctx, t.j); err != nil {
+			return err
+		}
+		if err := fsutil.Move(checkpoint, t.store.Path("archive", t.j.TransactionID+".checkpoint")); err != nil {
+			return err
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	if err := t.engine.Fence.Check(t.ctx, t.j); err != nil {
 		return err
 	}
