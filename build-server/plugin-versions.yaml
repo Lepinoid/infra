@@ -5,6 +5,6 @@
     "name": "plugin-versions"
   },
   "data": {
-    "desired.json": "{\"schemaVersion\":1,\"version\":\"2026.10.31-1.21.8-a592e\",\"ociRepository\":\"ghcr.io/lepinoid/lepinoid-tools\",\"digest\":\"sha256:bacf63b8996d6d5581a9b47b88bfafc169ae047edad7f409a1bcf55b860fc0cd\",\"pluginCommitSha\":\"a592eb1098d1265b626af30e0aab505a0e6a202f\",\"lepinoidToolsSha256\":\"f3afaf1f93906db5e25bf3069f041eba5bafcb72df0e4809372e8f2833523dfb\",\"multiverseSha256\":\"792252b6bbcf17c94ab8385e595281c830d7a40c946aea1832d8a010702bb630\",\"multiverseVersion\":\"5.8.2\",\"supportedMinecraft\":[\"1.21.8\"]}"
+    "desired.json": "{\"schemaVersion\":1,\"version\":\"2026.10.31-1.21.8-2c8f8\",\"ociRepository\":\"ghcr.io/lepinoid/lepinoid-tools\",\"digest\":\"sha256:07e7f40cdbca26d1e6689e99ad6f2c4a65ccdbafe572039eff3cac0c8c9e7843\",\"pluginCommitSha\":\"2c8f813efa97b017178cbb13f41edb1c61928344\",\"lepinoidToolsSha256\":\"500ee73e7b204046a9f6ddb8788734ac82517baf19429f80850c04690aa5175c\",\"multiverseSha256\":\"792252b6bbcf17c94ab8385e595281c830d7a40c946aea1832d8a010702bb630\",\"multiverseVersion\":\"5.8.2\",\"supportedMinecraft\":[\"1.21.8\"]}"
   }
 }
