@@ -20,7 +20,8 @@ spec:
       securityContext:
         seccompProfile:
           type: RuntimeDefault
-      terminationGracePeriodSeconds: 180
+      # 終了時 Git 保存の実測約 6 分半に対応し、preStop を含む猶予を確保する。
+      terminationGracePeriodSeconds: 660
       initContainers:
         # LepinoidTools AutoCommit プラグイン用の git 認証情報を /data に展開する。
         # itzg イメージは HOME=/data で UID 1000 として起動するため、
@@ -157,9 +158,9 @@ spec:
             # white-list を既定 false に戻すのを防ぐ (updater が white-list= を CAS 管理するため必須)
             - name: OVERRIDE_SERVER_PROPERTIES
               value: "false"
-            # Paper 正常終了 (SIGTERM) の猶予。terminationGracePeriodSeconds より小さく設定
+            # 終了時の保存に最大 10 分を与え、Pod の終了猶予より 60 秒短くする。
             - name: STOP_DURATION
-              value: "120"
+              value: "600"
             # updater/gate プラグインが Pod UID を serverInstanceId として使用する
             - name: POD_UID
               valueFrom:

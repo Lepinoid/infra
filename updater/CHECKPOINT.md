@@ -31,6 +31,12 @@ LepinoidTools の `updater-status.json` は最新の操作 1 件を保持し、�
 
 Go コードのマージだけでは稼働中イメージは変わらない。`Publish plugin updater` workflow でイメージを公開し、検証済み digest を使う別の保守変更が必要になる。通常のイメージ更新は active journal がない状態で行い、Deployment の initContainer / sidecar、CronJob、rescue Pod の参照を同じ `<tag>@sha256:<digest>` にそろえる。
 
+### 終了時の保存猶予
+
+実環境ではワールドの checkpoint 保存・Git 処理に 392 秒（約 6 分半）かかったため、`STOP_DURATION` を 600 秒、`terminationGracePeriodSeconds` を 660 秒に設定する。Pod の終了猶予には preStop の処理時間も含まれるため、サーバーの停止待ちより長く取る。
+
+この設定は新しく作成する Pod に適用され、既存 Pod の終了猶予は変わらない。初回切り替え時に `.git/index.lock` が残った場合は、旧 Pod の消滅を含め全 writer が停止し、新しい Minecraft コンテナがまだ起動していないことを確認してから、残骸と確認できた当該 lock だけを扱う。保存中の lock を削除したり、起動時に無条件で削除したりしない。
+
 ### 旧版のループで active journal が残っている場合
 
 既存トランザクションを修正版で完了させる必要がある場合は、Deployment を先に更新せず、次の順序で復旧する。
