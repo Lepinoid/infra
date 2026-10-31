@@ -20,7 +20,8 @@ spec:
       securityContext:
         seccompProfile:
           type: RuntimeDefault
-      terminationGracePeriodSeconds: 180
+      # 終了時 Git 保存の実測約 6 分半に対応し、preStop を含む猶予を確保する。
+      terminationGracePeriodSeconds: 660
       initContainers:
         # LepinoidTools AutoCommit プラグイン用の git 認証情報を /data に展開する。
         # itzg イメージは HOME=/data で UID 1000 として起動するため、
@@ -71,7 +72,7 @@ spec:
               memory: 32Mi
         # updater init recovery: maintenance 中断・jar 破損からの自動回復を minecraft 起動前に実施
         - name: plugin-updater-init
-          image: ghcr.io/lepinoid/plugin-updater:26.10.24-da170@sha256:e639b88298363f33e61e8a5de492c9303f96293975521eaff78273f0ab025de9
+          image: ghcr.io/lepinoid/plugin-updater:26.10.31-c8abd@sha256:013be95aab6c5593199b4cdf97e05c9a268266ce977b8d312f1a9c1720da408b
           imagePullPolicy: IfNotPresent
           args: ["init-recover"]
           env:
@@ -157,9 +158,9 @@ spec:
             # white-list を既定 false に戻すのを防ぐ (updater が white-list= を CAS 管理するため必須)
             - name: OVERRIDE_SERVER_PROPERTIES
               value: "false"
-            # Paper 正常終了 (SIGTERM) の猶予。terminationGracePeriodSeconds より小さく設定
+            # 終了時の保存に最大 10 分を与え、Pod の終了猶予より 60 秒短くする。
             - name: STOP_DURATION
-              value: "120"
+              value: "600"
             # updater/gate プラグインが Pod UID を serverInstanceId として使用する
             - name: POD_UID
               valueFrom:
@@ -192,7 +193,7 @@ spec:
               memory: 14Gi
         # updater sidecar: kubectl cp 用 tar + updater CLI (CronJob 経由で run を実行)
         - name: updater
-          image: ghcr.io/lepinoid/plugin-updater:26.10.24-da170@sha256:e639b88298363f33e61e8a5de492c9303f96293975521eaff78273f0ab025de9
+          image: ghcr.io/lepinoid/plugin-updater:26.10.31-c8abd@sha256:013be95aab6c5593199b4cdf97e05c9a268266ce977b8d312f1a9c1720da408b
           imagePullPolicy: IfNotPresent
           args: ["sleep", "infinity"]
           command: ["/bin/busybox"]

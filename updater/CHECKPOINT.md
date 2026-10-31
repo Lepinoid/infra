@@ -29,4 +29,23 @@ LepinoidTools の `updater-status.json` は最新の操作 1 件を保持し、�
 
 ## イメージへの反映
 
-Go コードのマージだけでは稼働中イメージは変わらない。`Publish plugin updater` workflow でイメージを公開し、検証済み digest を使う別の保守変更が必要になる。イメージ更新には既存の active journal 不在の保守条件を適用する。この修正自体は Deployment / CronJob の digest や実クラスタの状態を変更しない。
+Go コードのマージだけでは稼働中イメージは変わらない。`Publish plugin updater` workflow でイメージを公開し、検証済み digest を使う別の保守変更が必要になる。通常のイメージ更新は active journal がない状態で行い、Deployment の initContainer / sidecar、CronJob、rescue Pod の参照を同じ `<tag>@sha256:<digest>` にそろえる。
+
+### 終了時の保存猶予
+
+実環境ではワールドの checkpoint 保存・Git 処理に 392 秒（約 6 分半）かかったため、`STOP_DURATION` を 600 秒、`terminationGracePeriodSeconds` を 660 秒に設定する。Pod の終了猶予には preStop の処理時間も含まれるため、サーバーの停止待ちより長く取る。
+
+この設定は新しく作成する Pod に適用され、既存 Pod の終了猶予は変わらない。初回切り替え時に `.git/index.lock` が残った場合は、旧 Pod の消滅を含め全 writer が停止し、新しい Minecraft コンテナがまだ起動していないことを確認してから、残骸と確認できた当該 lock だけを扱う。保存中の lock を削除したり、起動時に無条件で削除したりしない。
+
+### 旧版のループで active journal が残っている場合
+
+既存トランザクションを修正版で完了させる必要がある場合は、Deployment を先に更新せず、次の順序で復旧する。
+
+1. CronJob の元の `spec.suspend` を控えてから一時停止する。進行中の旧 Job は中断せず、終了と `plugin-updater` Lease の解放を確認する。Job が終了してもサーバー側の保存は続き得るため、保存を強制停止しない。Flux に一時停止を消されないよう、patch には専用 field manager を指定する。
+2. `kubectl create job <name> --from=cronjob/plugin-updater --dry-run=client -o json` で一時 Job の定義を作り、updater の image だけを公開済みの検証済み digest に置き換える。Pod template の `app=plugin-updater-job`、ServiceAccount、PVC、nodeSelector、`JOB_UID` / `DOCKER_CONFIG`、時間制限を維持していることを確認してから作成する。旧 sidecar / initContainer は固定したままにする。
+3. 一時 Job を直列に実行し、同じトランザクションを再開する。5 分で `checkpoint-timeout` になった場合は checkpoint 記録と status を照合し、先の Job が終了して Lease を解放した後に次の一時 Job を実行する。保存の結果が不明な場合は記録を削除したり、journal の phase を書き換えたりして先へ進めない。
+4. トランザクションが成功として archive され、active journal と `maintenance.flag` がなく、gate が `INACTIVE`、`current` が desired manifest と一致することを確認する。Job の `Complete` だけでは更新完了と判定しない。
+5. active journal 不在を確認し、適用直前にプレイヤーが 0 人で保存が `idle` であることを再確認する。gate が開いてから新規入場があり得る場合は、保守中だけ接続経路を抑止し、復元できるよう元の設定を記録する。その後、全 4 箇所の image 参照をそろえた保守 PR をマージし、Flux の適用と Deployment の rollout 完了を確認する。initContainer / sidecar と CronJob が同じ digest を使い、build-server の全コンテナが Ready であることを確認する。
+6. 一時的に抑止した接続経路と CronJob の `spec.suspend` を元に戻す。次の定期 Job が正常終了し、新たな checkpoint の繰り返しや入場閉鎖が発生していないことを確認してから、ログなどの証跡を保管し、不要な一時 Job を削除する。
+
+途中で保存結果・閉鎖状態・Lease の所有権を確認できなくなった場合は、CronJob を停止したまま診断する。旧版イメージへ戻してループを再開させることや、進行中の保存を中断することを復旧手順には含めない。
