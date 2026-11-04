@@ -1,6 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
+  - arc
   - couchdb/credentials.sops.yaml
   - couchdb/users.sops.yaml
   - couchdb/configmap.yaml
