@@ -1,0 +1,169 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: lepi-ci-medium
+spec:
+  suspend: false
+  interval: 30m
+  timeout: 10m
+  serviceAccountName: lepinoid-helm
+  dependsOn:
+    - name: lepinoid-arc-controller
+  chartRef:
+    kind: OCIRepository
+    name: lepinoid-arc-runner-chart
+  install:
+    crds: Skip
+    remediation:
+      retries: 2
+  upgrade:
+    crds: Skip
+    remediation:
+      retries: 2
+  values:
+    githubConfigUrl: https://github.com/Lepinoid
+    githubConfigSecret: arc-github-app
+    runnerGroup: lepinoid-ci
+    runnerScaleSetName: lepi-ci-medium
+    minRunners: 0
+    maxRunners: 2
+    controllerServiceAccount:
+      name: lepinoid-arc-controller
+      namespace: lepinoid
+    listenerTemplate:
+      metadata:
+        labels:
+          ci.turtton.net/control: "true"
+      spec:
+        containers:
+          - name: listener
+            resources:
+              requests:
+                cpu: 50m
+                memory: 128Mi
+              limits:
+                cpu: 200m
+                memory: 256Mi
+    template:
+      metadata:
+        labels:
+          ci.turtton.net/runner: "true"
+          ci.turtton.net/size: medium
+      spec:
+        serviceAccountName: arc-runner
+        automountServiceAccountToken: false
+        enableServiceLinks: false
+        restartPolicy: Never
+        activeDeadlineSeconds: 4200
+        terminationGracePeriodSeconds: 30
+        securityContext:
+          seccompProfile:
+            type: RuntimeDefault
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: kubernetes.io/hostname
+                      operator: In
+                      values: [toliworker-1, toliworker-2, toliworker-3]
+                    - key: kubernetes.io/arch
+                      operator: In
+                      values: [amd64]
+                    - key: kubernetes.io/os
+                      operator: In
+                      values: [linux]
+        topologySpreadConstraints:
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: ScheduleAnyway
+            labelSelector:
+              matchLabels:
+                ci.turtton.net/runner: "true"
+        initContainers:
+          - name: prepare-data
+            image: ghcr.io/actions/actions-runner:2.338.2@sha256:0ce3288e48b012a83685998f683a2ae0cbd284fa722c090dda0af5443215cf30
+            imagePullPolicy: IfNotPresent
+            command: [/bin/bash, -euc]
+            args:
+              - >-
+                mkdir -p /data/{work,cache,toolcache,nix,tmp};
+                chown 1001:1001 /data/{work,cache,toolcache,tmp};
+                chmod 1777 /data/tmp;
+                chmod 0755 /data/nix
+            securityContext:
+              runAsUser: 0
+              runAsGroup: 0
+            resources:
+              requests:
+                cpu: 100m
+                memory: 128Mi
+                ephemeral-storage: 64Mi
+              limits:
+                cpu: "1"
+                memory: 256Mi
+                ephemeral-storage: 128Mi
+            volumeMounts:
+              - name: data
+                mountPath: /data
+        containers:
+          - name: runner
+            image: ghcr.io/actions/actions-runner:2.338.2@sha256:0ce3288e48b012a83685998f683a2ae0cbd284fa722c090dda0af5443215cf30
+            imagePullPolicy: IfNotPresent
+            command: [/home/runner/run.sh]
+            env:
+              - name: CI_RUNNER_CPUS
+                value: "4"
+              - name: CI_RUNNER_MEMORY_GIB
+                value: "8"
+              - name: GRADLE_USER_HOME
+                value: /home/runner/_work/.gradle
+              - name: RUNNER_TOOL_CACHE
+                value: /opt/hostedtoolcache
+              - name: AGENT_TOOLSDIRECTORY
+                value: /opt/hostedtoolcache
+              - name: TMPDIR
+                value: /tmp
+              - name: ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT
+                value: "1"
+            securityContext:
+              runAsUser: 1001
+              runAsGroup: 1001
+            resources:
+              requests:
+                cpu: "4"
+                memory: 8Gi
+                ephemeral-storage: 512Mi
+              limits:
+                cpu: "4"
+                memory: 8Gi
+                ephemeral-storage: 2Gi
+            volumeMounts:
+              - name: data
+                mountPath: /home/runner/_work
+                subPath: work
+              - name: data
+                mountPath: /home/runner/.cache
+                subPath: cache
+              - name: data
+                mountPath: /opt/hostedtoolcache
+                subPath: toolcache
+              - name: data
+                mountPath: /nix
+                subPath: nix
+              - name: data
+                mountPath: /tmp
+                subPath: tmp
+        volumes:
+          - name: data
+            ephemeral:
+              volumeClaimTemplate:
+                metadata:
+                  labels:
+                    ci.turtton.net/runner: "true"
+                spec:
+                  accessModes: [ReadWriteOnce]
+                  storageClassName: longhorn-single
+                  resources:
+                    requests:
+                      storage: 40Gi

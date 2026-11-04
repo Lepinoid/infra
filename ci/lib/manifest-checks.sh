@@ -6,7 +6,7 @@
 # この版の Kubernetes の API スキーマで検証する。クラスタ（turtton/infra）の更新に合わせて上げる。
 MANIFEST_KUBERNETES_VERSION=${MANIFEST_KUBERNETES_VERSION:-1.35.0}
 # kubeconform の標準スキーマに含まれない CRD。CRD スキーマは検証しない。
-MANIFEST_SKIP_KINDS=${MANIFEST_SKIP_KINDS:-HelmRelease,HelmRepository,CiliumNetworkPolicy}
+MANIFEST_SKIP_KINDS=${MANIFEST_SKIP_KINDS:-HelmRelease,HelmRepository,OCIRepository,CiliumNetworkPolicy}
 # tag だけでなく digest まで固定しなければならない image。
 # plugin-updater は initContainer・sidecar・CronJob で同じ版が動く前提のため、可変 tag を許さない。
 MANIFEST_DIGEST_REQUIRED_IMAGES=${MANIFEST_DIGEST_REQUIRED_IMAGES:-ghcr.io/lepinoid/plugin-updater}
