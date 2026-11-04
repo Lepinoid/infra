@@ -88,9 +88,11 @@ ARCの自動起動試験では、4台がすべて `lepinoid` に作成され、1
 loopback通信がすべて成功した。終了後はrunner Podと4つのPVCが自動回収され、元の8 PVCだけが残った。
 待機時の実使用はcontroller約20Mi、listener各約8Miだった。
 
-一時namespaceでの実ジョブ試験中、Node Pressure、eviction、既存Podの再起動増加は検出されなかった。
+各試験の実行時間内ではNode Pressure、eviction、既存Podの再起動増加は検出されなかった。
 配置先ノードの `MemAvailable` 最小は約7.9Giだった。これは現行負荷での結果であり、
 既存Podのmemory limits合計がノード容量を超える設定は別途監視する。
+ARC試験終了の約21分後（06:25:40 UTC）にlivesync-bridgeが同期処理の未実装メソッド例外で再起動した。
+終了理由はError / exit code 1でOOMKilledではなく、CI負荷との関連を示す証拠は確認できなかった。
 
 - 実ワークロード比較: https://github.com/Lepinoid/lepinoid/actions/runs/41774649754
 - ARC自動起動・分離・回収: https://github.com/Lepinoid/lepinoid/actions/runs/41782904976
