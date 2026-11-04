@@ -73,3 +73,28 @@ controller / listener は Kubernetes API、DNS、GitHub 等の公開 IPv4 に接
 
 GitHub Actions では `runs-on: lepi-ci-small` または `runs-on: lepi-ci-medium` で scale set を選ぶ。
 controller の資格情報を runner に渡す設定は不要。
+
+## 2026-11-04 の試験結果
+
+同一ソース・空のcache・memory 8Gi・Gradle workers=2のruntime全チェックは、
+2 CPUで33分52秒、4 CPUで28分55秒となり、両方で524 test suitesが成功した。
+4 CPUは約15%短縮したため、mediumは4 CPU/8Gi、workers=2を採用する。
+small 2 CPU/4Giでassets/world-importの2ジョブも成功し、最大working setは約3.2〜3.5Giだった。
+small 2台・medium 2台の実ジョブ試験は全ジョブ成功し、157秒間の4並列を確認した。
+runtimeの比較時working set最大は約5.8Gi、workers=4の並行試験では約6.5Giだった。
+
+ARCの自動起動試験では、4台がすべて `lepinoid` に作成され、115秒の同時稼働を確認した。
+非公開repo checkout、CPU/memory上限、DNS/公開HTTPS、同namespaceアプリ・API・LANの拒否、
+loopback通信がすべて成功した。終了後はrunner Podと4つのPVCが自動回収され、元の8 PVCだけが残った。
+待機時の実使用はcontroller約20Mi、listener各約8Miだった。
+
+一時namespaceでの実ジョブ試験中、Node Pressure、eviction、既存Podの再起動増加は検出されなかった。
+配置先ノードの `MemAvailable` 最小は約7.9Giだった。これは現行負荷での結果であり、
+既存Podのmemory limits合計がノード容量を超える設定は別途監視する。
+
+- 実ワークロード比較: https://github.com/Lepinoid/lepinoid/actions/runs/41774649754
+- ARC自動起動・分離・回収: https://github.com/Lepinoid/lepinoid/actions/runs/41782904976
+
+Skopeoは非root・capabilityなし・read-only rootfsの1 CPU/1Gi Podで、
+両archiveの全layer copyとconfig一致を43秒で確認した。一時領域最大は約2.15Gi。
+GHCRへの本番pushとclient harnessは今回の試験対象外。
