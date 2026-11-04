@@ -3,12 +3,15 @@
 ARC controller、listener、runner をすべて `lepinoid` namespace に配置する。
 controller は `watchSingleNamespace: lepinoid` でこの namespace だけを管理する。
 GitHub Actions は組織 `Lepinoid` の runner group `lepinoid-ci`（ID: 7）に登録する。
-runner group は `Lepinoid/lepinoid` だけに公開し、公開リポジトリからは利用させない。
+runner group は非公開リポジトリ `Lepinoid/lepinoid`（ID: 307067795）と
+`Lepinoid/lepinoid-client`（ID: 518140849）だけに公開し、公開リポジトリからは利用させない。
 
 | scale set / `runs-on` | CPU request・limit | メモリ request・limit | 最大同時実行 | 待機数 |
 |---|---:|---:|---:|---:|
 | `lepi-ci-small` | 2 | 4 GiB | 2 | 0 |
 | `lepi-ci-medium` | 4 | 8 GiB | 2 | 0 |
+
+この最大 4 ジョブの枠は両リポジトリで共有し、リポジトリごとの枠は設けない。
 
 4 ジョブの合計は 12 CPU / 24 GiB。別途 controller と listener 2 台の予約として
 200m CPU / 512 MiB が必要になる。既存ワークロードと合わせてクラスタ側の
