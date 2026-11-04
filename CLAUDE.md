@@ -52,15 +52,15 @@ SOPS の Age 秘密鍵は `SOPS_AGE_KEY_CMD` 経由で Bitwarden CLI (`rbw get l
 
 ## Resource Quota
 
-クラスタ側（turtton/infra）で管理される。2026-10-24 時点の値（`kubectl -n lepinoid get resourcequota` で確認できる）:
+クラスタ側（turtton/infra）で管理される。ARC導入用のクラスタ変更で以下へ拡張する（適用状態は `kubectl -n lepinoid get resourcequota` で確認できる）:
 
 | リソース | 上限 |
 |----------|------|
-| requests.cpu | 12 |
-| requests.memory | 24Gi |
-| limits.cpu | 20 |
-| limits.memory | 40Gi |
-| PVC 数 | 20 |
+| requests.cpu | 25 |
+| requests.memory | 50Gi |
+| limits.cpu | 34 |
+| limits.memory | 66Gi |
+| PVC 数 | 24 |
 
 ## Architecture
 
