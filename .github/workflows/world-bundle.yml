@@ -130,12 +130,16 @@ jobs:
           path: runtime-source
           persist-credentials: false
 
-      - name: Set up JDK 21
+      # Fabric Loom (tools/world-import) needs a JDK 25 JVM to run Gradle; the runtime build and the importer's
+      # toolchain use JDK 21. 21 is installed last so it stays the default JAVA_HOME.
+      - name: Set up JDK 25 and 21
         if: steps.existing.outputs.reuse != 'true'
         uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
         with:
           distribution: temurin
-          java-version: 21
+          java-version: |
+            25
+            21
 
       - name: Set up Gradle
         if: steps.existing.outputs.reuse != 'true'
@@ -152,7 +156,8 @@ jobs:
           cd runtime-source
           ./gradlew installDist --max-workers=2
           for world in terrestrial lv1; do
-            ./gradlew -p tools/world-import importWorld --max-workers=2 \
+            JAVA_HOME="$JAVA_HOME_25_X64" ./gradlew -p tools/world-import importWorld --max-workers=2 \
+              -Dorg.gradle.java.installations.fromEnv=JAVA_HOME_21_X64,JAVA_HOME_25_X64 \
               --args="--source $GITHUB_WORKSPACE/worlds/$world --output $imported/$world --world $world"
           done
           fingerprint=$(LEPINOID_WORLD_PATH="$imported/terrestrial" \
