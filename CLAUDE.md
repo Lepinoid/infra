@@ -77,6 +77,7 @@ kustomization.yaml          ← 全リソースのエントリポイント
 ├── grafana/                ← スタンドアロン Grafana (grafana:11.5.2)
 │   └── Cloudflare Access auth proxy (Cf-Access-Authenticated-User-Email ヘッダー)
 ├── lepinoid/               ← dev server (Velocity + Minestom runtime pool, PostgreSQL, NATS, ワールド配布)
+│   └── dev 限定の MCP (runtime のポート 8083): token は専用 Secret `lepinoid-dev-mcp`、到達元は NetworkPolicy でエージェント Pod (`lepinoid-dev-agent`) だけ
 └── build-server/           ← ビルドサーバー (PaperMC + MySQL) と plugin-updater の CronJob
 
 updater/                    ← plugin-updater (Go)。build-server の LepinoidTools を、プレイヤーの退出を待ってから安全に更新する

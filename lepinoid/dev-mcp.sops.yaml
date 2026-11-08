@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: lepinoid-dev-mcp
+type: Opaque
+stringData:
+    token: ENC[AES256_GCM,data:HFdI09cDbZAIAv79/biFXxyhvghPfxGHXzpE0ZBSBulSnvZuL8p9Gt1Ybg==,iv:odiuwEGyiA8O4eHxIv7sJvnZk/+mcbfaOUbET4umYsw=,tag:k4YxD5DPJC76f7F9YEuUwg==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA1eGVmalZGcWRxUzY0NW9z
+            RzhTUkRRUnF0TmNSWFJqY05PZ29QN2xHbWljClNWM3JVYmh5R2xvWFhIMk5KaGVY
+            V1YvaUlMVnBRZ3c3RllxZXRndW0ya0UKLS0tIDBVbE5ncWVFekQ0bVNwSitqVTRT
+            WTV0RURsZWt4dEJyQ2lnS0thU2Q3OXMKolMr4dgo1QDyieIa7Lh0GWPXVsTOXhHr
+            Dwz07fCOa5sN7rZ4JOQ/964WHBzSn+kUc9IaOhq1aOGH42KDPK8ruw==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age10p7f8sn3v2r0973s8q4664sgxh4hpt8c0tp3w83w8m0zu5rkfccqge8atx
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-11-08T12:16:40Z"
+    mac: ENC[AES256_GCM,data:ocxsmhDzyAaXdd96LmdGzx7Ak8osR8m5+qOTKBRSkxko04R+Ir1qWFOySUlNCSLb0K3iRBDWHPZa4NGNxflgfBIGEbqKVrv1zYFUTvK1z8XyFLpAZEzLxgOdG6XTThebLkGkJmBL1WRYcyXzX1079s7l0Vgg3RLWOsc8vT8ATxA=,iv:bl7FuX3tMScmTPfJR0bbiVkBHn0ePQ22SCH2rQejqpQ=,tag:d/70il/IO1gO0/ad6YaVww==,type:str]
+    version: 3.13.3

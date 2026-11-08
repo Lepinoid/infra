@@ -11,6 +11,7 @@ spec:
     - {name: minecraft, port: 25565, targetPort: minecraft}
     - {name: management, port: 8080, targetPort: management}
     - {name: control, port: 8081, targetPort: control}
+    - {name: mcp, port: 8083, targetPort: mcp}
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -110,6 +111,9 @@ spec:
             - {name: management, containerPort: 8080}
             - {name: control, containerPort: 8081}
             - {name: resourcepack, containerPort: 8082}
+            # dev 限定の MCP（Lepinoid/lepinoid#784）。probe は付けない（/readyz・/livez は management の 8080）。
+            # 公開 Service には載せず、NetworkPolicy lepinoid-pool-runtime でエージェント Pod だけに開ける。
+            - {name: mcp, containerPort: 8083}
           resources:
             requests: {cpu: 500m, memory: 2Gi}
             limits: {cpu: 1500m, memory: 3Gi}
@@ -126,6 +130,8 @@ spec:
             - {name: LEPINOID_STATUS_PORT, value: "8080"}
             - {name: LEPINOID_TRANSFER_BIND_HOST, value: "0.0.0.0"}
             - {name: LEPINOID_TRANSFER_PORT, value: "8081"}
+            - {name: LEPINOID_MCP_BIND_HOST, value: "0.0.0.0"}
+            - {name: LEPINOID_MCP_PORT, value: "8083"}
             - {name: LEPINOID_MAX_PLAYERS, value: "8"}
             - {name: LEPINOID_VIEW_DISTANCE, value: "8"}
             - {name: LEPINOID_WORLD, value: TERRESTRIAL}
@@ -141,6 +147,9 @@ spec:
               valueFrom: {secretKeyRef: {name: lepinoid-runtime-secrets, key: forwarding-secret}}
             - name: LEPINOID_TRANSFER_SECRET
               valueFrom: {secretKeyRef: {name: lepinoid-runtime-secrets, key: transfer-secret}}
+            # MCP 専用の token。forwarding-secret・transfer-secret とは別の値にする（runtime が同値を拒否する）。
+            - name: LEPINOID_MCP_TOKEN
+              valueFrom: {secretKeyRef: {name: lepinoid-dev-mcp, key: token}}
             - name: POSTGRES_DB
               valueFrom: {secretKeyRef: {name: lepinoid-db-credentials, key: POSTGRES_DB}}
             - {name: LEPINOID_JDBC_URL, value: "jdbc:postgresql://lepinoid-runtime-db:5432/$(POSTGRES_DB)"}
