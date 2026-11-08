@@ -25,6 +25,7 @@ resources:
   - lepinoid/db-credentials.sops.yaml
   - lepinoid/auth-secret.sops.yaml
   - lepinoid/runtime-secrets.sops.yaml
+  - lepinoid/dev-mcp.sops.yaml
   - lepinoid/db-pvc.yaml
   - lepinoid/db-deployment.yaml
   - lepinoid/db-service.yaml
