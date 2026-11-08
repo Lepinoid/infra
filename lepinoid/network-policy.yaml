@@ -116,7 +116,7 @@ spec:
 # app.kubernetes.io/name=lepinoid-dev-agent）以外から拒否する。
 # deny は標準 NetworkPolicy を含む allow より優先される（Cilium の Deny Policies）。deny の対象から例外を
 # 除く構文はないので、「許可する Pod 以外」を NotIn で選ぶ（NotIn はキーのない Pod にも一致する）。
-# 8083 以外のポートと、ほかの Pod の通信には影響しない。
+# 8083 以外のポートと、ほかの Pod の通信には影響しない（kubelet の probe は 8080）。
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -136,7 +136,11 @@ spec:
             - {key: app.kubernetes.io/name, operator: NotIn, values: [lepinoid-dev-agent]}
       toPorts:
         - ports: [{port: "8083", protocol: TCP}]
-    - fromEntities: [world, remote-node]
+    # host は同じノードのホストと、そのノード上の hostNetwork の Pod（monitoring の Alloy など）を含む。
+    # Cilium は同じノードのホストからの ingress を既定で許可する（allow-localhost）が、deny はその許可にも優先する。
+    # kubectl port-forward は、containerd が Pod の netns の中で localhost:8083 に接続する（Pod 内の loopback）ので、
+    # Pod の ingress ポリシーの対象にならず、host を拒否しても使える。8083 に probe はない。
+    - fromEntities: [world, remote-node, host]
       toPorts:
         - ports: [{port: "8083", protocol: TCP}]
 ---
