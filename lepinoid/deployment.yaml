@@ -112,7 +112,7 @@ spec:
             - {name: control, containerPort: 8081}
             - {name: resourcepack, containerPort: 8082}
             # dev 限定の MCP（Lepinoid/lepinoid#784）。probe は付けない（/readyz・/livez は management の 8080）。
-            # 公開 Service には載せず、NetworkPolicy lepinoid-pool-runtime でエージェント Pod だけに開ける。
+            # 公開 Service には載せない。到達元は CiliumNetworkPolicy lepinoid-pool-runtime-mcp-deny（ingressDeny）で絞る。
             - {name: mcp, containerPort: 8083}
           resources:
             requests: {cpu: 500m, memory: 2Gi}
