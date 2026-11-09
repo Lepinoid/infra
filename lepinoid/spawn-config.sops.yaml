@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: lepinoid-spawn-config
+type: Opaque
+stringData:
+    spawnconfig.json: ENC[AES256_GCM,data:EP6XYTHlOz61D0tsGQGyje9BaFzX77zhBs3+VH+VO6hLsZLia/nqybmc5MhR9XxDywAePzbyu43oPR0/4itKUvvAB4NIzqdH7jaNyWFP0N5E9JWfNT2eruP7k4GQDbSADGl/QhT0tDpD1qMBtsNfVYlm4vnWT84qBe6FpAjq9oi0BC5kwJKR2bSusGy6B0xDBnr4RuU=,iv:BpGZeJQViAAVgUHfQsr28LWKlIdn8ea7Uk+XKo1+kU0=,tag:NGthI5vHAsy9vyUnNVl3xA==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA4UjlJRnZjY0IvaGwwMlMr
+            YmFVVzR0enFUUWNBWmUrV1ZBQ3J4c01CUmtRClRuT1RobDIvbExQTlFRcTlpOTZY
+            UnM1UkVwc0R0TnZjcW42anVqd3NMejgKLS0tIFlJNTdkQzFXQTB4eVJyNmkvaUNN
+            UmVqcVpPbWt5Zko1QzRNcXRZS2pBakUKc6ZeLNP1VwDxrKs8uUnQzpdAajZtEuAI
+            NfMpzu1GLQQ4CTSwFhCjZ94BT1gyczzb98FaP6AHytkOaomgIFgenA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age10p7f8sn3v2r0973s8q4664sgxh4hpt8c0tp3w83w8m0zu5rkfccqge8atx
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-11-09T19:33:09Z"
+    mac: ENC[AES256_GCM,data:EFAAsrtCnT9C4rXtN/1CeBPuGzMvuQHAOlEDAHambQkwjxd9AnkGlUunKPrgBGBzRUvHzQW47fFuZ5S6MqrUfg/sSXnm2CN7xaOTFjmJDQTLlydoUBKshmOtTtb9b17NiH5PQ0+WqhwHalHJtpIRv9YFkJee7tYrlLLv1sNiuZo=,iv:038vV+JFJdJ0m80F4pBCCdYeAohuSQEZKJWgiGyiYmU=,tag:cvudBh4L2zgk0vvQngPluA==,type:str]
+    version: 3.13.3

@@ -157,6 +157,9 @@ spec:
               valueFrom: {secretKeyRef: {name: lepinoid-db-credentials, key: POSTGRES_USER}}
             - name: LEPINOID_DB_PASSWORD
               valueFrom: {secretKeyRef: {name: lepinoid-db-credentials, key: POSTGRES_PASSWORD}}
+            # 設定 revision ストア（設定 DB lepinoid_config）の接続設定。dev プロファイルかつ enabled=true の起動時に
+            # スキーマ作成と spawn・weapon の初期 revision 作成が自動で行われる。LEPINOID_SERVER_CONFIG_PATH は未配備（自然湧きは無効のまま）。
+            - {name: LEPINOID_SPAWN_CONFIG_PATH, value: /run/spawn-config/spawnconfig.json}
             - {name: LEPINOID_AUTH_REPOSITORY, value: Lepinoid/OperatorInfo}
             - {name: LEPINOID_AUTH_FILE_PATH, value: operators.yml}
             - name: LEPINOID_AUTH_GITHUB_TOKEN
@@ -195,6 +198,7 @@ spec:
             - {name: runtime-scripts, mountPath: /run/pool, readOnly: true}
             - {name: selected-presence-credentials, mountPath: /run/presence, readOnly: true}
             - {name: crafting-key, mountPath: /run/crafting, readOnly: true}
+            - {name: spawn-config, mountPath: /run/spawn-config, readOnly: true}
       volumes:
         - {name: worlds, emptyDir: {}}
         - {name: scratch, emptyDir: {}}
@@ -225,6 +229,11 @@ spec:
             secretName: lepinoid-runtime-secrets
             defaultMode: 0440
             items: [{key: craft-seed, path: seed.bin}]
+        - name: spawn-config
+          secret:
+            secretName: lepinoid-spawn-config
+            defaultMode: 0440
+            items: [{key: spawnconfig.json, path: spawnconfig.json}]
   volumeClaimTemplates:
     - metadata:
         name: world-edits
