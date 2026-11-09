@@ -65,6 +65,50 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+        # 設定 DB（lepinoid_config）をゲーム用 DB とは別の database として冪等に作るサイドカー。
+        # PVC 初期化済みの既存 DB では initdb.d が再実行されないため、Pod 起動のたびに存在を確認して足りなければ作る。
+        # 完了後は終了せず待機する（コンテナを終了させると restartPolicy: Always で再起動を繰り返すため）。
+        - name: create-config-db
+          image: postgres:16
+          command:
+            - sh
+            - -c
+            - |
+              set -u
+              until pg_isready -q; do sleep 2; done
+              until psql -v ON_ERROR_STOP=1 -q -d postgres <<'SQL'
+              SELECT 'CREATE DATABASE lepinoid_config' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'lepinoid_config') \gexec
+              SQL
+              do
+                echo "[config-db] creating lepinoid_config failed; retrying"
+                sleep 5
+              done
+              echo "[config-db] database lepinoid_config is present"
+              trap 'exit 0' TERM INT
+              while :; do sleep 3600 & wait $!; done
+          env:
+            - {name: PGHOST, value: "127.0.0.1"}
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: lepinoid-db-credentials
+                  key: POSTGRES_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lepinoid-db-credentials
+                  key: POSTGRES_PASSWORD
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
       volumes:
         - name: lepinoid-db-data
           persistentVolumeClaim:

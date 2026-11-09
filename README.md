@@ -89,6 +89,16 @@ DB は `lepinoid-runtime-db` Service 経由の PostgreSQL 16 を使い、新規 
 
 runtime が内蔵する resource pack を `lepinoid-resourcepack:8082` の `/resourcepack.zip` で配信する。Cloudflare Tunnel の `pack-dev.lepinoid.net` をこの Service へ向け、公開 URL `https://pack-dev.lepinoid.net/resourcepack.zip?runtime=<runtime SHA7>` をクライアントへ案内する。Cloudflare の旧版キャッシュを避けるため、release 更新時は image・world と同じ commit で URL の runtime 版も切り替える。
 
+### 設定 DB (lepinoid_config)
+
+runtime の設定 revision ストア（weapon-tuning 画面の「確定」などが使う設定 DB）を dev で有効にしている。構成は次のとおり。
+
+- database: 同じ `lepinoid-runtime-db` に、プレイヤー情報とは別の database `lepinoid_config` を置く。Deployment のサイドカー `create-config-db`（`postgres:16`）が、Pod 起動のたびに存在を確認して、なければ作る（冪等）。作成後は終了せず待機するので、再起動を繰り返さない。PVC は初期化済みで `initdb.d` が再実行されないため、サイドカーにしている。テーブルは runtime が dev プロファイルの起動時に作る（`Schema`・`spawn`／`weapon` の初期 revision。冪等で、複数 Pod の同時起動でも revision は増えない）。
+- Secret: `lepinoid/spawn-config.sops.yaml`（Secret `lepinoid-spawn-config`、キー `spawnconfig.json`）。`enabled=true`・`environment=dev`・接続先 `//lepinoid-runtime-db:5432`・database `lepinoid_config`・ユーザーとパスワードを持つ。runtime コンテナに `/run/spawn-config/spawnconfig.json` として読み取り専用で mount し（`defaultMode: 0440`、uid `10001` が `fsGroup` で読む）、環境変数 `LEPINOID_SPAWN_CONFIG_PATH` で指す。runtime はこのファイルを起動時に 1 回だけ読むので、変更後は Pod の再作成が要る。
+- 資格情報は二重管理になる: ユーザーとパスワードは `lepinoid/db-credentials.sops.yaml`（`POSTGRES_USER`／`POSTGRES_PASSWORD`）と同じ値を `spawnconfig.json` にも書く。パスワードを変えるときは両方の Secret を直す。専用ロールや読み取り専用ユーザーは作らない（dev では runtime の全 Pod が同じ資格情報を持つため。本番と共有するときに導入する）。
+- 未配備のもの: `LEPINOID_SERVER_CONFIG_PATH`（`naturalSpawn` の allowlist）は設定しないので、自然湧きは無効のままで、採取の高品質率も設定されない。
+- この設定を有効にするには、runtime image が Lepinoid/lepinoid#775（起動時のスキーマ作成と初期 revision 作成）を含む版であること。含まない版では、スキーマがないため weapon-tuning の確定が「基点を読み込めません」で止まる。
+
 ## ワールド配布 (lepinoid-dev)
 
 Lepinoid/Worlds の `lepinoid/world-sync-config.yaml` で有効にした terrestrial と lv1 を、Minecraft 1.21.8 用の runtime importer で変換して OCI bundle (`ghcr.io/lepinoid/runtime-world-bundle:<version>-<runtime SHA7>`) として配布する。元の建築用ワールドは変換元として扱う。
