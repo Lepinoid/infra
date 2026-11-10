@@ -6,8 +6,12 @@ spec:
   replicas: 1
   # PVC（grafana-data）は ReadWriteOnce。RollingUpdate だと新しい Pod が別ノードに置かれたとき、古い Pod が PVC を持ったまま
   # 新しい Pod が Multi-Attach で起動しない。volume を変える（ダッシュボードの追加）たびに作り直すので、Recreate にする。
+  # 既存の Deployment は RollingUpdate の既定値（maxSurge・maxUnavailable）を持つ。サーバーサイド apply では、type だけを
+  # Recreate にすると既定値が残って "spec.strategy.rollingUpdate: Forbidden" で dry-run が失敗し、Flux の適用全体が止まる。
+  # rollingUpdate: null で明示的に消す。
   strategy:
     type: Recreate
+    rollingUpdate: null
   selector:
     matchLabels:
       app: grafana
