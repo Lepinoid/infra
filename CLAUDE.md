@@ -39,7 +39,7 @@ SOPS の Age 秘密鍵は `SOPS_AGE_KEY_CMD` 経由で Bitwarden CLI (`rbw get l
 - **クラスタスコープリソース（ClusterRole, CRD, PV 等）は作成不可**
 - Secret ファイルは `*.sops.yaml` の命名規則に従う（`.sops.yaml` の `path_regex` に一致させる）。暗号化済みであること、それ以外のファイルに値を持つ Secret を置かないことを CI で検査する
 - `ghcr.io/lepinoid/plugin-updater` は `<tag>@sha256:<digest>` で固定する。digest で固定した同じ image は、同じトップレベルディレクトリ内ですべて同じ参照にそろえる（CI で検査）
-- `ghcr.io/lepinoid/dsh-agent` と `ghcr.io/lepinoid/neuralwatt-exporter` も `<tag>@sha256:<digest>` で固定する（CI で検査。`MANIFEST_DIGEST_REQUIRED_IMAGES`）。neuralwatt-exporter は公開前のプレースホルダ digest（0 を 64 個）を `neuralwatt-exporter/deployment.yaml` に置き、`kustomization.yaml` には入れない（入れると CI が失敗する）。公開後に実際の digest に置き換える PR で `kustomization.yaml` へ追加する（README の「neuralwatt-exporter」節）
+- `ghcr.io/lepinoid/dsh-agent` と `ghcr.io/lepinoid/neuralwatt-exporter` も `<tag>@sha256:<digest>` で固定する（CI で検査。`MANIFEST_DIGEST_REQUIRED_IMAGES`）。版は publish workflow（`neuralwatt-exporter-image.yml`）の実行ログの `Published: <ref>@<digest>` を `neuralwatt-exporter/deployment.yaml` に貼る別 PR で上げる（README の「neuralwatt-exporter」節）。公開前の雛形に置くプレースホルダ digest（0 を 64 個）は、`kustomization.yaml` から参照されるマニフェストに入れない（CI で検査）
 - `kustomization.yaml` に含めない手動適用のマニフェスト（例: `build-server/rescue-pod.yaml`）も、同じ CI 検査の対象になる
 
 ## GitHub Actions Rules

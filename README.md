@@ -60,7 +60,7 @@ PR コメントの `/tf-apply` は使用しない。属性値を含む詳細 pla
 2. Pod を作る全コンテナ（initContainers を含む）に `requests` / `limits` の `cpu` と `memory` がある
 3. `ghcr.io/lepinoid/plugin-updater`・`dsh-agent`・`neuralwatt-exporter`（`MANIFEST_DIGEST_REQUIRED_IMAGES`）が `<tag>@sha256:<digest>` で固定され、digest で固定した同じ image が同じトップレベルディレクトリ内で同じ参照になっている
 4. `*.sops.yaml` が SOPS で暗号化済み（age の受信者と MAC があり、`data` / `stringData` の値がすべて `ENC[...]`）で、それ以外のファイルに値を持つ Secret がない
-5. 公開前のプレースホルダ digest（0 を 64 個）が、`kustomization.yaml` から参照されるマニフェストに入っていない（`kustomization.yaml` に含めない `neuralwatt-exporter/deployment.yaml` では許す。[手順](#neuralwatt-exporter)）
+5. プレースホルダ digest（0 を 64 個。イメージの公開前に雛形を置くときの印）が、`kustomization.yaml` から参照されるマニフェストに入っていない（`kustomization.yaml` に含めないマニフェストでは許す）
 
 ### Static checks / GitHub Actions workflows
 
@@ -214,15 +214,16 @@ kubectl get --raw /api/v1/namespaces/lepinoid/pods/$pod:8080/proxy/metrics | gre
 
 値はポータルの表示と突き合わせる。`/healthz` はプロセスが生きていれば 200（API の失敗では落とさない）。API の失敗は `neuralwatt_exporter_fetch_success` で見る（`up` は exporter に届くかどうかだけ）。
 
-### 公開と配備の手順（初回）
+### 公開と版の更新の手順
 
-イメージの tag と digest は公開してからでないと決まらないので、`neuralwatt-exporter/deployment.yaml` の `image` は**プレースホルダ**（`ghcr.io/lepinoid/neuralwatt-exporter:unpublished@sha256:` ＋ 0 を 64 個）で、ルートの `kustomization.yaml` には入っていない（standalone のマニフェストとして `ci/check-manifests.sh` の対象。プレースホルダのままルートに入れると CI が落ちる）。
+`neuralwatt-exporter/deployment.yaml` の `image` は `<tag>@sha256:<digest>` で固定する（tag だけの参照は `ci/check-manifests.sh` が拒否する）。
 
-1. このリポジトリの PR をマージする（`neuralwatt-exporter/network-policy.yaml` とダッシュボードはこの時点で反映される。Pod はまだない）。
-2. `main` のコミットにタグ `neuralwatt-exporter-<任意の版>` を付けて push するか、Actions の **Publish Neuralwatt exporter** を `main` から手動実行する（`workflow_dispatch`）。テストとイメージのビルド・起動確認の後、`ghcr.io/lepinoid/neuralwatt-exporter:<yy.mm.dd>-<コミット SHA5>` を push し、digest を実行ログに出す。**新しい GHCR パッケージの初回 publish は `requested access to the resource is denied` になることがある**（パッケージとリポジトリの関連付け・可視性は人の作業）。`ghcr-pull-secret` の資格情報がパッケージを読めない場合は、パッケージを公開にする（イメージに秘密はなく、リポジトリも公開）。
-3. 別の PR で、`neuralwatt-exporter/deployment.yaml` の `image` を `ghcr.io/lepinoid/neuralwatt-exporter:<tag>@sha256:<digest>` にし、ルートの `kustomization.yaml` の `resources` に `neuralwatt-exporter/deployment.yaml` を足す（tag だけの参照は `ci/check-manifests.sh` が拒否する）。
+1. コードを変えた PR をマージする（`exporters/neuralwatt/**` の変更は `neuralwatt-exporter-tests.yml` が検査する）。
+2. `main` のコミットにタグ `neuralwatt-exporter-<任意の版>` を付けて push するか、Actions の **Publish Neuralwatt exporter** を `main` から手動実行する（`workflow_dispatch`）。テストとイメージのビルド・起動確認の後、`ghcr.io/lepinoid/neuralwatt-exporter:<yy.mm.dd>-<コミット SHA5>` を push し、実行ログに `Published: <ref>@<digest>` を出す。
+3. 別の PR で、`deployment.yaml` の `image` をその `<tag>@sha256:<digest>` に書き換える（publish の実行 URL を PR に書く）。
 4. マージ後、`kubectl -n lepinoid get deploy,pods -l app.kubernetes.io/name=neuralwatt-exporter` で 1/1 Ready・再起動 0 を確かめ、上の「確認方法」で `neuralwatt_exporter_fetch_success 1` を確認する。
-5. 版を上げるときも 2〜4 を繰り返す（2 回目以降は `image` の差し替えだけ）。
+
+初回の公開（2026-11-10）: `ghcr.io/lepinoid/neuralwatt-exporter:26.11.10-39702@sha256:85683c794be3d0d0d329cdf79029bc65bf52a22522a95c4fff4671a9df449558`（[run 42830419610](https://github.com/Lepinoid/infra/actions/runs/42830419610)）。**新しい GHCR パッケージの初回 publish は `requested access to the resource is denied` になることがある**（パッケージとリポジトリの関連付け・可視性は人の作業）。パッケージは作成直後は private で、リポジトリ `Lepinoid/infra` に関連付けられている。Pod が `ImagePullBackOff` で `unauthorized`／`denied` になるときは、[`ghcr-pull-secret` がパッケージを読めるか](#ghcr-pull-secret-がパッケージを読めるか)の切り分けに従い、`ghcr-pull-secret` の token の所有ユーザーにパッケージ `lepinoid/neuralwatt-exporter` の Read を付けるか、パッケージを公開にする（イメージに秘密はなく、リポジトリも公開）。
 
 ### キーの回転・`402` が出たとき
 

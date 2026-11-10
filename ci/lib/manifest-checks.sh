@@ -184,8 +184,7 @@ check_digest_pins() {
 }
 
 # 公開前のプレースホルダ digest（64 個の 0）は、kustomization.yaml から参照されるマニフェストに入れない
-# （入れると Flux が存在しない image を pull しようとする）。kustomization.yaml に含めないマニフェストでは許す
-# （neuralwatt-exporter/deployment.yaml は、イメージの公開後に実際の digest へ置き換える PR で kustomization.yaml に追加する）。
+# （入れると Flux が存在しない image を pull しようとする）。kustomization.yaml に含めないマニフェスト（公開前の雛形）では許す。
 check_placeholder_digests() {
   local root=$1 file image status=0
   shift
