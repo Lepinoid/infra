@@ -1,0 +1,92 @@
+# dsh-agent（app.kubernetes.io/name=lepinoid-dev-agent）の外向きを、DNS・外部の 443・runtime の MCP（8083）だけに絞る。
+#
+# クラスタ側（turtton/infra）の base が全 Pod に default-deny を適用し、さらに「同 namespace の全 Pod への egress」
+# （allow-dns-egress）と monitoring の 9090・3100（allow-monitoring-egress）を許可している。標準の NetworkPolicy の許可は
+# 加算されるので、この許可は下の標準の NetworkPolicy では狭められない。狭めるのは CiliumNetworkPolicy の egressDeny
+# （deny は base の許可にも優先する。前例は arc/network-policy.yaml の arc-runner-isolation）。
+# D0（2026-11-09）で NetworkPolicy は「強制されている」と確認済み（Cilium 1.20.4）。
+#
+# ingress は定義しない（dsh は 127.0.0.1 で待ち受け、kubectl port-forward は Pod 内の loopback へ届くので Pod の ingress の対象外）。
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dsh-agent
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: lepinoid-dev-agent}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    # 私設アドレス帯を除く公開の TCP 443（api.neuralwatt.com:443 を含む）。FQDN の許可リストにはしない
+    # （宛先が出そろう後続の作業で検討する）。
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 100.64.0.0/10
+              - 169.254.0.0/16
+      ports:
+        - {protocol: TCP, port: 443}
+    # dev 限定の MCP（段階 1）。
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: lepinoid-runtime-pool}
+      ports:
+        - {protocol: TCP, port: 8083}
+---
+# 明示的な deny。CIDR の deny がクラスタ内の endpoint に効くかは公式資料で確認できていないため、arc-runner-isolation と
+# 同じく toEndpoints・toEntities・toCIDRSet を併用する。
+# runtime の Pod のコンテナポートが増えたら、下の「runtime の 8083 以外の既知のポート」を更新する
+# （現在の宛先は lepinoid/deployment.yaml の ports: 25565・8080・8081・8082・8083）。
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: dsh-agent-egress-deny
+spec:
+  endpointSelector:
+    matchLabels: {app.kubernetes.io/name: lepinoid-dev-agent}
+  egressDeny:
+    - toEndpoints:
+        # lepinoid namespace の、runtime 以外の全 Pod（DB・NATS・cloudflared・Velocity・build-server など。
+        # app.kubernetes.io/name のない Pod にも一致する）
+        - matchLabels: {"k8s:io.kubernetes.pod.namespace": lepinoid}
+          matchExpressions:
+            - {key: app.kubernetes.io/name, operator: NotIn, values: [lepinoid-runtime-pool]}
+        # monitoring を含む、lepinoid・kube-system 以外の namespace の全 Pod
+        - matchExpressions:
+            - {key: "k8s:io.kubernetes.pod.namespace", operator: Exists}
+            - {key: "k8s:io.kubernetes.pod.namespace", operator: NotIn, values: [lepinoid, kube-system]}
+        # kube-system の kube-dns 以外
+        - matchLabels: {"k8s:io.kubernetes.pod.namespace": kube-system}
+          matchExpressions:
+            - {key: "k8s:k8s-app", operator: NotIn, values: [kube-dns]}
+    # runtime の 8083 以外の既知のポート（8083 は deny の対象から外す）
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": lepinoid
+            app.kubernetes.io/name: lepinoid-runtime-pool
+      toPorts:
+        - ports:
+            - {port: "25565", protocol: TCP}
+            - {port: "8080", protocol: TCP}
+            - {port: "8081", protocol: TCP}
+            - {port: "8082", protocol: TCP}
+    - toEntities: [host, remote-node, kube-apiserver]
+    - toCIDRSet:
+        - cidr: 10.0.0.0/8
+        - cidr: 172.16.0.0/12
+        - cidr: 192.168.0.0/16
+        - cidr: 100.64.0.0/10
+        - cidr: 169.254.0.0/16

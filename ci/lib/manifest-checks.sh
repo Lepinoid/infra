@@ -9,7 +9,8 @@ MANIFEST_KUBERNETES_VERSION=${MANIFEST_KUBERNETES_VERSION:-1.35.0}
 MANIFEST_SKIP_KINDS=${MANIFEST_SKIP_KINDS:-HelmRelease,HelmRepository,OCIRepository,CiliumNetworkPolicy}
 # tag だけでなく digest まで固定しなければならない image。
 # plugin-updater は initContainer・sidecar・CronJob で同じ版が動く前提のため、可変 tag を許さない。
-MANIFEST_DIGEST_REQUIRED_IMAGES=${MANIFEST_DIGEST_REQUIRED_IMAGES:-ghcr.io/lepinoid/plugin-updater}
+# dsh-agent は PVC 上の状態を持つ StatefulSet で、tag の付け替えによる意図しない版の切り替えを防ぐ。空白区切り。
+MANIFEST_DIGEST_REQUIRED_IMAGES=${MANIFEST_DIGEST_REQUIRED_IMAGES:-ghcr.io/lepinoid/plugin-updater ghcr.io/lepinoid/dsh-agent}
 
 # 先頭がドットでないトップレベルディレクトリ直下の YAML を、ROOT からの相対パスで列挙する。
 manifest_files() {

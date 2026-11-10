@@ -39,6 +39,10 @@ resources:
   - lepinoid/velocity.yaml
   - lepinoid/nats.yaml
   - lepinoid/rbac.yaml
+  - dsh-agent/secrets.sops.yaml
+  - dsh-agent/statefulset.yaml
+  - dsh-agent/service.yaml
+  - dsh-agent/network-policy.yaml
   - build-server/mysql-credentials.sops.yaml
   - build-server/git-credentials.sops.yaml
   - build-server/lepinoid-tools-config.sops.yaml

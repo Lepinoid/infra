@@ -187,4 +187,10 @@ expect_fail "app/b.yaml: ghcr.io/lepinoid/plugin-updater:1-a must be pinned" che
 pod_with_images b busybox@sha256:abc >"$root/app/b.yaml"
 expect_fail "app/b.yaml: busybox@sha256:abc has an invalid digest" check_digest_pins "$root" app/b.yaml
 
+pod_with_images d ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-f434bcb >"$root/app/d.yaml"
+expect_fail "app/d.yaml: ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-f434bcb must be pinned" check_digest_pins "$root" app/d.yaml
+
+pod_with_images d "ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-f434bcb@$digest_a" >"$root/app/d.yaml"
+expect_ok check_digest_pins "$root" app/d.yaml
+
 echo "manifest-checks tests passed"
