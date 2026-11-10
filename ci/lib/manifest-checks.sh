@@ -130,29 +130,40 @@ image_repository() {
 
 # digest 固定のルール:
 # - MANIFEST_DIGEST_REQUIRED_IMAGES の image は tag@sha256:<64 桁> で固定する（tag は必須。digest だけは不可）
-# - digest を付けるなら sha256 の完全な値にする
+# - 参照は最初の "@" で <repo>[:<tag>] と <digest> に分け、digest 全体が sha256:<小文字 64 桁> に一致すること
+#   （"@" の複数、空白、大文字の hex、sha512 などは digest の不一致として拒否する）。<repo>[:<tag>] 側は
+#   [A-Za-z0-9._/:-] だけ（空白などがあると repository を取り違えて必須の検査を素通りするため）
+# - 必須の repository の比較は大文字小文字を区別しない（OCI の repository は小文字だが、大文字で書いても素通りさせない）
 # - 同じトップレベルディレクトリで digest 固定した同じ repository は、すべて同じ参照にする
 check_digest_pins() {
-  local root=$1 file image repo ref_name key status=0
+  local root=$1 file image base digest repo repo_lc ref_name key status=0
   shift
   local -A first_ref first_file
   while IFS=$'\t' read -r file image; do
+    base=${image%%@*}
+    digest=
+    [[ $image == *@* ]] && digest=${image#*@}
+    if [[ ! $base =~ ^[A-Za-z0-9._/:-]+$ ]]; then
+      echo "digest: $file: $image has an invalid image reference" >&2
+      status=1
+      continue
+    fi
     repo=$(image_repository "$image")
-    if [[ $image == *@* && ! $image =~ @sha256:[0-9a-f]{64}$ ]]; then
+    repo_lc=${repo,,}
+    if [[ $image == *@* && ! $digest =~ ^sha256:[0-9a-f]{64}$ ]]; then
       echo "digest: $file: $image has an invalid digest" >&2
       status=1
       continue
     fi
-    if [[ " $MANIFEST_DIGEST_REQUIRED_IMAGES " == *" $repo "* && $image != *@* ]]; then
+    if [[ " ${MANIFEST_DIGEST_REQUIRED_IMAGES,,} " == *" $repo_lc "* && $image != *@* ]]; then
       echo "digest: $file: $image must be pinned as <tag>@sha256:<digest>" >&2
       status=1
       continue
     fi
     # tag がない（digest だけ）・空・不正な文字の参照は、どの版か読めないので受理しない。
     # tag は [A-Za-z0-9_][A-Za-z0-9_.-]{0,127}（OCI の distribution spec）。
-    ref_name=${image%%@*}
-    ref_name=${ref_name##*/}
-    if [[ " $MANIFEST_DIGEST_REQUIRED_IMAGES " == *" $repo "* ]] &&
+    ref_name=${base##*/}
+    if [[ " ${MANIFEST_DIGEST_REQUIRED_IMAGES,,} " == *" $repo_lc "* ]] &&
       { [[ $ref_name != *:* ]] || [[ ! ${ref_name#*:} =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; }; then
       echo "digest: $file: $image must have a valid tag (<tag>@sha256:<digest>)" >&2
       status=1
