@@ -5,11 +5,8 @@
 #   exporter は取得のたびにファイルを読み直すので、キーを替えても再起動は要らない
 #   （kubelet が Secret の更新をマウントへ反映するまでに最大で 1〜2 分かかる）。
 # - イメージはこのリポジトリの exporters/neuralwatt（publish workflow: neuralwatt-exporter-image.yml）。
-#   tag@digest で固定する（ci/check-manifests.sh が検査する）。
-#
-# 【公開前】image の tag と digest はプレースホルダ（digest が 64 個の 0）。publish workflow の実行後に、別の PR で
-# 実際の <tag>@sha256:<digest> に置き換え、あわせてルートの kustomization.yaml に このファイルを追加する
-# （プレースホルダのまま kustomization.yaml に入れると ci/check-manifests.sh が失敗する）。手順は README の「neuralwatt-exporter」節。
+#   tag@digest で固定する（ci/check-manifests.sh が検査する）。版を上げるときは publish workflow の実行ログの
+#   "Published: <ref>@<digest>" を貼る（手順は README の「neuralwatt-exporter」節）。
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -39,7 +36,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: neuralwatt-exporter
-          image: ghcr.io/lepinoid/neuralwatt-exporter:unpublished@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          image: ghcr.io/lepinoid/neuralwatt-exporter:26.11.10-39702@sha256:85683c794be3d0d0d329cdf79029bc65bf52a22522a95c4fff4671a9df449558
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
