@@ -1,0 +1,87 @@
+# HELP neuralwatt_account_info Account information. Always 1.
+# TYPE neuralwatt_account_info gauge
+neuralwatt_account_info{accounting_method="energy",rate_limit_tier="standard"} 1
+# HELP neuralwatt_credits_remaining_usd Current USD credit balance (balance.credits_remaining_usd).
+# TYPE neuralwatt_credits_remaining_usd gauge
+neuralwatt_credits_remaining_usd 32.6774
+# HELP neuralwatt_credits_total_usd Lifetime credits purchased or granted in USD (balance.total_credits_usd).
+# TYPE neuralwatt_credits_total_usd gauge
+neuralwatt_credits_total_usd 52.34
+# HELP neuralwatt_exporter_fetch_duration_seconds Duration of the latest fetch attempt. Absent until the first fetch finishes.
+# TYPE neuralwatt_exporter_fetch_duration_seconds gauge
+neuralwatt_exporter_fetch_duration_seconds 0.25
+# HELP neuralwatt_exporter_fetch_success 1 if the latest fetch of /v1/quota succeeded, 0 if it failed. Absent until the first fetch finishes.
+# TYPE neuralwatt_exporter_fetch_success gauge
+neuralwatt_exporter_fetch_success 1
+# HELP neuralwatt_exporter_fetches_total Fetch attempts of /v1/quota by result.
+# TYPE neuralwatt_exporter_fetches_total counter
+neuralwatt_exporter_fetches_total{result="client_error"} 0
+neuralwatt_exporter_fetches_total{result="credential_error"} 0
+neuralwatt_exporter_fetches_total{result="invalid_response"} 0
+neuralwatt_exporter_fetches_total{result="network_error"} 0
+neuralwatt_exporter_fetches_total{result="ok"} 1
+neuralwatt_exporter_fetches_total{result="payment_required"} 0
+neuralwatt_exporter_fetches_total{result="rate_limited"} 0
+neuralwatt_exporter_fetches_total{result="server_error"} 0
+neuralwatt_exporter_fetches_total{result="unauthorized"} 0
+# HELP neuralwatt_exporter_last_success_timestamp_seconds Unix time of the last successful fetch. 0 if no fetch has succeeded yet.
+# TYPE neuralwatt_exporter_last_success_timestamp_seconds gauge
+neuralwatt_exporter_last_success_timestamp_seconds 1.77636426025e+09
+# HELP neuralwatt_key_allowance_blocked 1 if the API key is blocked because its limit was reached.
+# TYPE neuralwatt_key_allowance_blocked gauge
+neuralwatt_key_allowance_blocked{key_name="my-production-key",period="monthly"} 0
+# HELP neuralwatt_key_allowance_limit_usd Spending limit of the API key in USD. Absent when the key has no limit.
+# TYPE neuralwatt_key_allowance_limit_usd gauge
+neuralwatt_key_allowance_limit_usd{key_name="my-production-key",period="monthly"} 10
+# HELP neuralwatt_key_allowance_remaining_usd Amount remaining for the API key in the current period in USD.
+# TYPE neuralwatt_key_allowance_remaining_usd gauge
+neuralwatt_key_allowance_remaining_usd{key_name="my-production-key",period="monthly"} 1.75
+# HELP neuralwatt_key_allowance_reset_timestamp_seconds Unix time when the API key's allowance resets.
+# TYPE neuralwatt_key_allowance_reset_timestamp_seconds gauge
+neuralwatt_key_allowance_reset_timestamp_seconds{key_name="my-production-key",period="monthly"} 1.7775936e+09
+# HELP neuralwatt_key_allowance_spent_usd Amount spent by the API key in the current period in USD.
+# TYPE neuralwatt_key_allowance_spent_usd gauge
+neuralwatt_key_allowance_spent_usd{key_name="my-production-key",period="monthly"} 8.25
+# HELP neuralwatt_limits_overage_limit_usd Account-level overage spending cap in USD. Absent when no cap is set.
+# TYPE neuralwatt_limits_overage_limit_usd gauge
+neuralwatt_limits_overage_limit_usd 5
+# HELP neuralwatt_monthly_budget_usd Configured monthly budget in USD (NEURALWATT_MONTHLY_BUDGET_USD). Absent when not configured.
+# TYPE neuralwatt_monthly_budget_usd gauge
+neuralwatt_monthly_budget_usd 20
+# HELP neuralwatt_quota_snapshot_timestamp_seconds snapshot_at of the last successful response.
+# TYPE neuralwatt_quota_snapshot_timestamp_seconds gauge
+neuralwatt_quota_snapshot_timestamp_seconds 1.7763642e+09
+# HELP neuralwatt_subscription_in_overage 1 if usage has exceeded the included allocation.
+# TYPE neuralwatt_subscription_in_overage gauge
+neuralwatt_subscription_in_overage 0
+# HELP neuralwatt_subscription_info Subscription information. Always 1. Absent without a subscription.
+# TYPE neuralwatt_subscription_info gauge
+neuralwatt_subscription_info{billing_interval="month",plan="standard",status="active"} 1
+# HELP neuralwatt_subscription_kwh_included kWh included in the current billing period.
+# TYPE neuralwatt_subscription_kwh_included gauge
+neuralwatt_subscription_kwh_included 20
+# HELP neuralwatt_subscription_kwh_remaining kWh remaining in the allowance (charged basis).
+# TYPE neuralwatt_subscription_kwh_remaining gauge
+neuralwatt_subscription_kwh_remaining 6.0977
+# HELP neuralwatt_subscription_kwh_used Charged kWh drawn against the allowance this period.
+# TYPE neuralwatt_subscription_kwh_used gauge
+neuralwatt_subscription_kwh_used 13.9023
+# HELP neuralwatt_subscription_period_end_timestamp_seconds Unix time of the end of the current subscription period.
+# TYPE neuralwatt_subscription_period_end_timestamp_seconds gauge
+neuralwatt_subscription_period_end_timestamp_seconds 1.778475925e+09
+# HELP neuralwatt_usage_cost_usd_total Usage cost in USD. current_month resets to 0 at a calendar month boundary.
+# TYPE neuralwatt_usage_cost_usd_total counter
+neuralwatt_usage_cost_usd_total{window="current_month"} 160.1463
+neuralwatt_usage_cost_usd_total{window="lifetime"} 243.9145
+# HELP neuralwatt_usage_energy_kwh_total Physical energy consumed in kWh. current_month resets to 0 at a calendar month boundary.
+# TYPE neuralwatt_usage_energy_kwh_total counter
+neuralwatt_usage_energy_kwh_total{window="current_month"} 9.7278
+neuralwatt_usage_energy_kwh_total{window="lifetime"} 15.6009
+# HELP neuralwatt_usage_requests_total Request count. current_month resets to 0 at a calendar month boundary.
+# TYPE neuralwatt_usage_requests_total counter
+neuralwatt_usage_requests_total{window="current_month"} 23902
+neuralwatt_usage_requests_total{window="lifetime"} 37801
+# HELP neuralwatt_usage_tokens_total Token count (input + output). current_month resets to 0 at a calendar month boundary.
+# TYPE neuralwatt_usage_tokens_total counter
+neuralwatt_usage_tokens_total{window="current_month"} 1.116658995e+09
+neuralwatt_usage_tokens_total{window="lifetime"} 1.235477176e+09
