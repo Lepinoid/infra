@@ -22,8 +22,6 @@ const (
 	maxResponseBytes = 1 << 20
 	// maxBackoff は Retry-After がない 429 の指数バックオフの上限。
 	maxBackoff = 10 * time.Minute
-	// maxRetryAfter は Retry-After に従う待ちの上限（異常な値で取得が止まり続けるのを防ぐ）。
-	maxRetryAfter = 24 * time.Hour
 )
 
 // config は環境変数から読む設定。API キーの値は持たない（ファイルのパスだけ）。

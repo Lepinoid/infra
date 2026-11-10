@@ -1,5 +1,6 @@
 # ビルドコンテキストはリポジトリのルート（docker build -f exporters/neuralwatt/Dockerfile .）。
-FROM golang:1.25.13-bookworm AS build
+# ベースイメージは digest で固定する（golang:1.25.13-bookworm の index）。上げるときは tag と digest を ci/check-neuralwatt-exporter.sh と合わせる。
+FROM golang:1.25.13-bookworm@sha256:e401dae1bf814e29204a8cb7915682e1780951e609ca0dd8865ee1937f510c48 AS build
 WORKDIR /src
 COPY exporters/neuralwatt/go.mod exporters/neuralwatt/go.sum ./
 RUN go mod download

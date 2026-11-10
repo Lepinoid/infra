@@ -4,7 +4,7 @@
 # ローカルでは nix の devShell が同じツールを提供するため、このスクリプトは不要。
 #
 # usage: ci/install-tools.sh BIN_DIR TOOL...
-#   TOOL: kustomize | kubeconform | yq | pinact
+#   TOOL: kustomize | kubeconform | yq | pinact | oras
 set -euo pipefail
 
 if [[ $# -lt 2 ]]; then
@@ -45,6 +45,11 @@ for tool in "$@"; do
       fetch https://github.com/suzuki-shunsuke/pinact/releases/download/v5.0.1/pinact_linux_amd64.tar.gz \
         12500c0fff5db94a0155e2e76ed959d1dc0e899056ee168d8fb7b4840e7c04f0 "$work/pinact.tar.gz"
       tar -xzf "$work/pinact.tar.gz" -C "$bin_dir" pinact
+      ;;
+    oras)
+      fetch https://github.com/oras-project/oras/releases/download/v1.3.4/oras_1.3.4_linux_amd64.tar.gz \
+        f27adb935022d94df8dc77719c322dda592c78a0d57a6f7dcdd8d900b248c454 "$work/oras.tar.gz"
+      tar -xzf "$work/oras.tar.gz" -C "$bin_dir" oras
       ;;
     *)
       echo "unknown tool: $tool" >&2

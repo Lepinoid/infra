@@ -150,3 +150,48 @@ func TestDashboardDatasources(t *testing.T) {
 		t.Errorf("default range = %v, want now-7d", time)
 	}
 }
+
+// 現在値のパネル（stat・gauge・table）の全 target は instant クエリ（instant: true、range: false）。
+// range クエリ + lastNotNull だと、系列が消えた（上限なし・サブスクリプションなし）あとも、表示期間内の過去の値や
+// 古いラベルの系列を出し続ける。履歴は時系列パネルで見る。
+func TestDashboardCurrentValuePanelsUseInstantQueries(t *testing.T) {
+	var dash struct {
+		Panels []struct {
+			Title   string `json:"title"`
+			Type    string `json:"type"`
+			Targets []struct {
+				Expr    string `json:"expr"`
+				Instant *bool  `json:"instant"`
+				Range   *bool  `json:"range"`
+			} `json:"targets"`
+		} `json:"panels"`
+	}
+	if err := json.Unmarshal(dashboardJSON(t), &dash); err != nil {
+		t.Fatal(err)
+	}
+	var current, series int
+	for _, p := range dash.Panels {
+		switch p.Type {
+		case "stat", "gauge", "table":
+			current++
+			if len(p.Targets) == 0 {
+				t.Errorf("panel %q has no targets", p.Title)
+			}
+			for _, tg := range p.Targets {
+				if tg.Instant == nil || !*tg.Instant || tg.Range == nil || *tg.Range {
+					t.Errorf("panel %q (%s): target %q must set instant: true and range: false", p.Title, p.Type, tg.Expr)
+				}
+			}
+		case "timeseries":
+			series++
+			for _, tg := range p.Targets {
+				if tg.Instant != nil && *tg.Instant {
+					t.Errorf("time series panel %q: target %q must not be instant", p.Title, tg.Expr)
+				}
+			}
+		}
+	}
+	if current < 10 || series < 8 {
+		t.Errorf("found %d current-value panels and %d time series panels; the dashboard changed shape", current, series)
+	}
+}

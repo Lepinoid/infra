@@ -199,7 +199,7 @@ dsh-agent が使う Neuralwatt の**残高・当月の使用量・キーの上�
 | `neuralwatt_monthly_budget_usd` | gauge（`NEURALWATT_MONTHLY_BUDGET_USD` から。未設定なら出ない） | — |
 | `process_start_time_seconds` | gauge（標準の process collector。起動時刻） | — |
 
-`result` の分類: `401`＝`unauthorized`、`402`＝`payment_required`、`429`＝`rate_limited`（`Retry-After` の間は再取得しない。なければ指数バックオフ＋ジッター、上限 10 分）、`5xx`＝`server_error`、その他の `4xx`＝`client_error`、接続失敗・タイムアウト（10 秒）＝`network_error`、不正な JSON・`balance.credits_remaining_usd` の欠落・1 MiB 超・リダイレクト（追従しない）・想定外の 2xx＝`invalid_response`、キーのファイルが読めない・空・ヘッダに使えない文字＝`credential_error`。
+`result` の分類: `401`＝`unauthorized`、`402`＝`payment_required`、`429`＝`rate_limited`（`Retry-After` の間は再取得しない。指定された時間は短縮しない。なければ指数バックオフ＋ジッター、上限 10 分）、`5xx`＝`server_error`、その他の `4xx`＝`client_error`、接続失敗・タイムアウト（10 秒）＝`network_error`、不正な JSON・`balance.credits_remaining_usd` の欠落・1 MiB 超・リダイレクト（追従しない）・想定外の 2xx・ラベルになる文字列（`key.name`・`period`・`plan` など）に送信したキーが入っている応答（`/metrics` への漏洩を防ぐため棄却）＝`invalid_response`、キーのファイルが読めない・空・ヘッダに使えない文字＝`credential_error`。
 
 ### 確認方法
 

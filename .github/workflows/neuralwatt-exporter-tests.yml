@@ -16,11 +16,12 @@ on:
       - 'ci/check-neuralwatt-exporter.sh'
       - 'ci/smoke-neuralwatt-exporter-image.sh'
       - '.github/workflows/neuralwatt-exporter-tests.yml'
-permissions:
-  contents: read
+permissions: {}
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -31,6 +32,8 @@ jobs:
   # publish workflow と同じ Dockerfile を push せずにビルドして起動を確かめる（公開前に Dockerfile の誤りを見つける）。
   image:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:

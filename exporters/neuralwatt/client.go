@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -143,7 +144,7 @@ func (c *quotaClient) fetch(ctx context.Context) (*snapshot, *fetchError) {
 	if len(body) > maxResponseBytes {
 		return nil, &fetchError{result: resultInvalidResponse, msg: "response body is too large"}
 	}
-	snap, ferr := parseQuota(body)
+	snap, ferr := parseQuota(body, key)
 	if ferr != nil {
 		return nil, ferr
 	}
@@ -155,33 +156,42 @@ func isTimeout(err error) bool {
 	return errors.As(err, &t) && t.Timeout()
 }
 
+// maxDuration は time.Duration で表せる最大の待ち時間（約 292 年）。
+const maxDuration = time.Duration(math.MaxInt64)
+
 // parseRetryAfter は秒数または HTTP-date の Retry-After を読む。読めない・負の値は nil。
+// 有効な指定は短縮しない（A-AC1: Retry-After の間は再取得しない）。time.Duration で表せない大きな値だけ maxDuration にする。
 func parseRetryAfter(v string, now time.Time) *time.Duration {
 	v = strings.TrimSpace(v)
 	if v == "" {
 		return nil
 	}
 	var d time.Duration
-	if secs, err := strconv.ParseInt(v, 10, 64); err == nil {
-		if secs < 0 {
-			return nil
+	if isDigits(v) {
+		secs, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || secs > int64(maxDuration/time.Second) {
+			d = maxDuration
+		} else {
+			d = time.Duration(secs) * time.Second
 		}
-		if secs > int64(maxRetryAfter/time.Second) {
-			secs = int64(maxRetryAfter / time.Second)
-		}
-		d = time.Duration(secs) * time.Second
 	} else if t, err := http.ParseTime(v); err == nil {
 		d = t.Sub(now)
 		if d < 0 {
 			d = 0
 		}
-		if d > maxRetryAfter {
-			d = maxRetryAfter
-		}
 	} else {
 		return nil
 	}
 	return &d
+}
+
+func isDigits(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return s != ""
 }
 
 // --- 応答の読み取り ---
@@ -233,13 +243,18 @@ type usageWindowResponse struct {
 
 // parseQuota は応答を寛容に読む。未知のフィールドは無視し、null・欠落は「その系列を出さない」にする。
 // balance.credits_remaining_usd がなければ失敗（スナップショットは更新しない）。
-func parseQuota(body []byte) (*snapshot, *fetchError) {
+// ラベルになる文字列（key.name・period・plan・status・billing_interval・accounting_method・rate_limit_tier）に
+// 送信した API キーが含まれる応答は、キーが /metrics に漏れるので棄却する（スナップショットは更新しない）。
+func parseQuota(body []byte, key string) (*snapshot, *fetchError) {
 	var q quotaResponse
 	if err := json.Unmarshal(body, &q); err != nil {
 		return nil, &fetchError{result: resultInvalidResponse, msg: "response is not the expected JSON"}
 	}
 	if q.Balance == nil || q.Balance.CreditsRemainingUSD == nil {
 		return nil, &fetchError{result: resultInvalidResponse, msg: "response has no balance.credits_remaining_usd"}
+	}
+	if labelsContainKey(&q, key) {
+		return nil, &fetchError{result: resultInvalidResponse, msg: "response contains the API key in a field exposed as a metric label"}
 	}
 	s := &snapshot{
 		snapshotAt:       parseTime(q.SnapshotAt),
@@ -272,6 +287,32 @@ func parseQuota(body []byte) (*snapshot, *fetchError) {
 		}
 	}
 	return s, nil
+}
+
+// labelsContainKey は、指標のラベルになる文字列のどれかに key が（部分文字列としても）含まれるかを返す。
+func labelsContainKey(q *quotaResponse, key string) bool {
+	var labels []string
+	if q.Balance != nil {
+		labels = append(labels, q.Balance.AccountingMethod)
+	}
+	if q.Limits != nil {
+		labels = append(labels, q.Limits.RateLimitTier)
+	}
+	if s := q.Subscription; s != nil {
+		labels = append(labels, s.Plan, s.Status, s.BillingInterval)
+	}
+	if q.Key != nil {
+		labels = append(labels, q.Key.Name)
+		if q.Key.Allowance != nil {
+			labels = append(labels, q.Key.Allowance.Period)
+		}
+	}
+	for _, l := range labels {
+		if strings.Contains(l, key) {
+			return true
+		}
+	}
+	return false
 }
 
 func toWindow(w *usageWindowResponse) *usageWindow {

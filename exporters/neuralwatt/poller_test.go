@@ -39,6 +39,40 @@ func TestRetryAfterHTTPDate(t *testing.T) {
 	}
 }
 
+// 有効な Retry-After は短縮しない（24 時間・1 年・Duration で表せる上限付近まで）。
+func TestRetryAfterIsNeverShortened(t *testing.T) {
+	cases := []struct {
+		header string
+		want   time.Duration
+	}{
+		{"86400", 24 * time.Hour},
+		{"86401", 24*time.Hour + time.Second},
+		{"172800", 48 * time.Hour},
+		{"31536000", 365 * 24 * time.Hour},
+		{"9223372036", 9223372036 * time.Second},
+	}
+	for _, tc := range cases {
+		e := newEnv(t, envOpts{interval: time.Minute})
+		e.api.set(serveStatus(429, map[string]string{"Retry-After": tc.header}, ""))
+		if d := e.step(t); d != tc.want {
+			t.Errorf("Retry-After %s: delay = %v, want %v", tc.header, d, tc.want)
+		}
+	}
+	// Duration で表せない値は、負にならず最大の待ち時間になる。
+	for _, h := range []string{"9223372037", "99999999999999999999"} {
+		got := parseRetryAfter(h, baseTime)
+		if got == nil || *got != maxDuration {
+			t.Errorf("Retry-After %s: got %v, want maxDuration", h, got)
+		}
+	}
+	// HTTP-date も 24 時間を超えて従う。
+	now := baseTime
+	date := now.Add(72 * time.Hour).UTC().Format(http.TimeFormat)
+	if got := parseRetryAfter(date, now); got == nil || *got != 72*time.Hour {
+		t.Errorf("Retry-After %q: got %v, want 72h", date, got)
+	}
+}
+
 // Retry-After が読めない・負のときは指数バックオフ（間隔を下回らない）。
 func TestRetryAfterInvalidFallsBackToBackoff(t *testing.T) {
 	for _, v := range []string{"soon", "-5", ""} {

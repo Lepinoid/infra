@@ -4,6 +4,10 @@ metadata:
   name: grafana
 spec:
   replicas: 1
+  # PVC（grafana-data）は ReadWriteOnce。RollingUpdate だと新しい Pod が別ノードに置かれたとき、古い Pod が PVC を持ったまま
+  # 新しい Pod が Multi-Attach で起動しない。volume を変える（ダッシュボードの追加）たびに作り直すので、Recreate にする。
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: grafana

@@ -82,6 +82,62 @@ func TestKeyNeverLeaks(t *testing.T) {
 		})
 	}
 
+	// 成功（200）の応答の文字列のうち指標のラベルになるものに、送信したキーが入っている場合は、応答を棄却する
+	// （key.allowance が有効で、サブスクリプションもある応答。部分文字列として入っている場合を含む）。
+	labelCases := []struct {
+		name   string
+		inject func(m map[string]any, key string)
+	}{
+		{"key.name equals the key", func(m map[string]any, key string) { m["key"].(map[string]any)["name"] = key }},
+		{"key.name contains the key", func(m map[string]any, key string) { m["key"].(map[string]any)["name"] = "prod-" + key + "-1" }},
+		{"key.allowance.period contains the key", func(m map[string]any, key string) {
+			m["key"].(map[string]any)["allowance"].(map[string]any)["period"] = "monthly-" + key
+		}},
+		{"subscription.plan contains the key", func(m map[string]any, key string) { m["subscription"].(map[string]any)["plan"] = key }},
+		{"subscription.status contains the key", func(m map[string]any, key string) { m["subscription"].(map[string]any)["status"] = "x" + key }},
+		{"subscription.billing_interval contains the key", func(m map[string]any, key string) {
+			m["subscription"].(map[string]any)["billing_interval"] = key + "x"
+		}},
+		{"balance.accounting_method contains the key", func(m map[string]any, key string) { m["balance"].(map[string]any)["accounting_method"] = key }},
+		{"limits.rate_limit_tier contains the key", func(m map[string]any, key string) { m["limits"].(map[string]any)["rate_limit_tier"] = "t-" + key }},
+	}
+	allowanceExample := mustRead(t, "quota_allowance.json")
+	for _, lc := range labelCases {
+		t.Run("label: "+lc.name, func(t *testing.T) {
+			e := newEnv(t, envOpts{budget: ptr(20.0)})
+			e.api.set(func(w http.ResponseWriter, r *http.Request) {
+				var m map[string]any
+				if err := json.Unmarshal(allowanceExample, &m); err != nil {
+					t.Error(err)
+				}
+				lc.inject(m, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+				_ = json.NewEncoder(w).Encode(m)
+			})
+			ferr := fetchOnce(t, e)
+			if ferr == nil || ferr.result != resultInvalidResponse {
+				t.Fatalf("a response with the key in a label must be rejected as invalid_response, got %v", ferr)
+			}
+			e.step(t)
+			if got := e.samples(t); got["neuralwatt_exporter_fetch_success"] != 0 {
+				t.Errorf("fetch_success = %v, want 0", got["neuralwatt_exporter_fetch_success"])
+			}
+			if data := dataSamples(e.samples(t)); len(data) != 0 {
+				t.Errorf("data series from a rejected response: %v", data)
+			}
+			assertNoLeak(t, e, ferr)
+		})
+	}
+
+	// 対照: 同じ応答でキーを含まなければ、ラベルは /metrics に出る（上の棄却が、ラベルを出す経路を通っていることの確認）。
+	t.Run("label: control without the key", func(t *testing.T) {
+		e := newEnv(t, envOpts{})
+		e.api.set(serveFile(t, "quota_allowance.json"))
+		e.step(t)
+		if _, ok := e.samples(t)[`neuralwatt_key_allowance_limit_usd{key_name="my-production-key",period="monthly"}`]; !ok {
+			t.Fatal("the allowance series with the key_name label is not exposed")
+		}
+	})
+
 	// キーのファイルが壊れているとき（キーを含むが不正な文字がある）も、エラー文・ログに値を出さない。
 	t.Run("malformed key file", func(t *testing.T) {
 		e := newEnv(t, envOpts{key: ptr(testKey + "\x00\r\nX-Injected: 1")})

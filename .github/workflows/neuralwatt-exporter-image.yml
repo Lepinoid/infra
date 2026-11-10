@@ -21,12 +21,10 @@ jobs:
           persist-credentials: false
       - name: Test exporter
         run: ci/check-neuralwatt-exporter.sh
-      - name: Install verified ORAS
+      - name: Install pinned tools
         run: |
-          set -euo pipefail
-          curl -fsSL https://github.com/oras-project/oras/releases/download/v1.3.4/oras_1.3.4_linux_amd64.tar.gz -o "$RUNNER_TEMP/oras.tar.gz"
-          echo "f27adb935022d94df8dc77719c322dda592c78a0d57a6f7dcdd8d900b248c454  $RUNNER_TEMP/oras.tar.gz" | sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/oras.tar.gz" -C /usr/local/bin oras
+          ci/install-tools.sh "$RUNNER_TEMP/bin" oras
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Publish an unused immutable tag
         id: publish
         env:
