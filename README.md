@@ -13,6 +13,7 @@ Flux CD がこのリポジトリを監視し、`lepinoid` namespace にリソー
 | **Cloudflared** | Cloudflare Tunnel による外部アクセス（token ベース） |
 | **Grafana** | Prometheus 接続のモニタリングダッシュボード。Cloudflare Access 認証 |
 | **Dev server (lepinoid)** | Velocity + Minestom runtime pool の dev サーバーとワールド配布（下記） |
+| **[dsh-agent](#dsh-agent-lepinoid-dev-agent)** | dev の調整作業を LLM エージェントと共同で行うための DeepSeek Harness（`dsh`）の専用 Pod。公開せず `kubectl port-forward` で使う（PoC） |
 | **[Build server](build-server/README.md)** | PaperMC のビルドサーバー。LepinoidTools は [plugin-updater](updater/README.md) が更新する |
 
 ## Secret Management
@@ -98,6 +99,71 @@ runtime の設定 revision ストア（weapon-tuning 画面の「確定」など
 - 資格情報は二重管理になる: ユーザーとパスワードは `lepinoid/db-credentials.sops.yaml`（`POSTGRES_USER`／`POSTGRES_PASSWORD`）と同じ値を `spawnconfig.json` にも書く。パスワードを変えるときは両方の Secret を直す。専用ロールや読み取り専用ユーザーは作らない（dev では runtime の全 Pod が同じ資格情報を持つため。本番と共有するときに導入する）。
 - 未配備のもの: `LEPINOID_SERVER_CONFIG_PATH`（`naturalSpawn` の allowlist）は設定しないので、自然湧きは無効のままで、採取の高品質率も設定されない。
 - この設定を有効にするには、runtime image が Lepinoid/lepinoid#775（起動時のスキーマ作成と初期 revision 作成）を含む版であること。含まない版では、スキーマがないため weapon-tuning の確定が「基点を読み込めません」で止まる。
+
+## dsh-agent (lepinoid-dev-agent)
+
+DeepSeek Harness（[`dsh`](https://github.com/deepseek-ai/deepseek-harness) 0.2.2-rc.1、web profile）を常駐させる専用 Pod の PoC（[Lepinoid/infra#79](https://github.com/Lepinoid/infra/issues/79)）。イメージ `ghcr.io/lepinoid/dsh-agent`（非公開）は [Lepinoid/dsh-agent](https://github.com/Lepinoid/dsh-agent) が作る。
+
+- 構成: StatefulSet `dsh-agent`（replicas 1）、PVC `data-dsh-agent-0`（`longhorn`、20Gi。`DSH_HOME=/data/dsh`、`HOME=/data/home`、サンドボックスの作業ルート `/data/work`）、公開しない headless Service。Pod のラベルは `app.kubernetes.io/name: lepinoid-dev-agent`（runtime の MCP（8083）の ingress が選ぶ名前）。
+- サンドボックス: Landlock（restricted 相当の `securityContext` のまま成立する。bwrap は使えない）。
+- モデル: Neuralwatt（`https://api.neuralwatt.com/v1`）の `deepseek-v4.1-flash`。ルートの設定はイメージのシードが持ち、API キーは Secret `dsh-agent-secrets`（キー `NEURALWATT_API_KEY`、`dsh-agent/secrets.sops.yaml`）から環境変数で受ける。このファイルの暗号化は**キーを持つ人が自分で行う**（実装者・エージェントは値を扱わない）。UI からキーを保存しない（`.credentials.yaml` の保存値が環境変数より優先されるため）。キーを替えたら `kubectl -n lepinoid rollout restart statefulset/dsh-agent`。
+- MCP の token: Secret `lepinoid-dev-mcp` のキー `token` を環境変数 `LEPINOID_MCP_TOKEN` で受ける（`optional: true`。Secret がなくても起動する）。
+- ネットワーク: 外向きは DNS、私設アドレス帯を除く公開の TCP 443、runtime の 8083 だけ。同 namespace などへの egress は base が許可しているので、`dsh-agent/network-policy.yaml` の `CiliumNetworkPolicy`（`egressDeny`）で明示的に拒否する。
+
+### 使い方
+
+dsh は `127.0.0.1:3080` だけで待ち受ける（ワイルドカードは dsh が拒否する）。`kubectl port-forward` は Pod の loopback へ届く。
+
+```sh
+kubectl -n lepinoid logs dsh-agent-0 | grep -i token                      # 起動ログの launch token の URL（値を共有・記録しない）
+kubectl -n lepinoid port-forward pod/dsh-agent-0 3080:3080
+```
+
+URL のホストを `127.0.0.1:3080` にしてブラウザで開く。認証は launch token と、`$DSH_HOME/.credentials.yaml` の署名鍵で署名した cookie（Pod を作り直しても残る。cookie はホストとポートに結びつくので、同じローカルポートを使う）。
+
+### イメージの更新
+
+1. [Lepinoid/dsh-agent](https://github.com/Lepinoid/dsh-agent) の CI が公開した `<dsh の版>-<コミット SHA7>` のタグと digest を確かめる。
+2. `dsh-agent/statefulset.yaml` の `image` を `ghcr.io/lepinoid/dsh-agent:<tag>@sha256:<digest>` に書き換える PR を出す（tag だけの参照は `ci/check-manifests.sh` が拒否する）。
+3. マージ後、StatefulSet が RollingUpdate で Pod を作り直す。PVC は残り、セッションと cookie の署名鍵も保持される。
+
+### `ghcr-pull-secret` がパッケージを読めるか
+
+イメージは非公開で、Pod は `ghcr-pull-secret`（`kubernetes.io/dockerconfigjson`、`ghcr.io` の資格情報）で引く。Secret の値は表示しない。
+
+- 適用後（結果の確認）: `kubectl -n lepinoid get pod dsh-agent-0` が `ImagePullBackOff`／`ErrImagePull` でなく、`kubectl -n lepinoid describe pod dsh-agent-0` の Events に `unauthorized`／`denied`／`forbidden` がないこと。`Successfully pulled image` が出ていれば読めている。
+- 適用前（先に確かめる。クラスタへの書き込みを伴うので、鍵の保持者が行う）: 使い捨ての Pod で同じ参照を引く。確認後に削除する。
+
+  ```sh
+  kubectl -n lepinoid apply -f - <<'YAML'
+  apiVersion: v1
+  kind: Pod
+  metadata:
+    name: dsh-agent-pull-check
+  spec:
+    restartPolicy: Never
+    automountServiceAccountToken: false
+    imagePullSecrets: [{name: ghcr-pull-secret}]
+    securityContext: {runAsNonRoot: true, runAsUser: 10001, seccompProfile: {type: RuntimeDefault}}
+    containers:
+      - name: c
+        image: ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-f434bcb@sha256:e80b6c1ac184849447198fdffe8b10c50a04e28074d4d6f809a20233c6bc67a2
+        imagePullPolicy: Always   # ノードにキャッシュ済みのイメージで成功して、権限の不足を見逃さない
+        command: [sleep, "30"]
+        securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
+        resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {cpu: 100m, memory: 128Mi}}
+  YAML
+  kubectl -n lepinoid wait --for=condition=Ready pod/dsh-agent-pull-check --timeout=120s   # 成功すれば読める
+  kubectl -n lepinoid describe pod dsh-agent-pull-check | sed -n '/Events:/,$p'              # 失敗時は unauthorized / denied
+  kubectl -n lepinoid delete pod dsh-agent-pull-check
+  ```
+
+- `unauthorized`／`denied` のとき（鍵の保持者の作業）: 原因は次の 3 つに分かれる。どれが足りないかを切り分けて調整する（実装者は token の値を使った確認をしていない）。
+  1. token の scope: `ghcr-pull-secret` の token が `read:packages` を持つこと（classic PAT。fine-grained PAT は Packages に対応しない）。
+  2. token 所有ユーザーの package 権限: パッケージ `lepinoid/dsh-agent`（Package settings）で、その token の所有ユーザー（またはそのユーザーを含む Team）に Read が付いていること。
+  3. Actions のリポジトリアクセス: Package settings の「Manage Actions access」は、**GitHub Actions のワークフロー（`GITHUB_TOKEN`）がパッケージを使う**ための設定で、`ghcr-pull-secret` の token（PAT）の権限とは別。クラスタからの pull には効かないので、ここを直しても pull は通らない。公開側の workflow が push できているかとは分けて考える。
+
+  token を差し替える場合は `lepinoid/ghcr-pull-secret.sops.yaml` を更新する（ほかの非公開イメージも引くため、権限を減らさない）。
 
 ## ワールド配布 (lepinoid-dev)
 

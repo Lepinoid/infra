@@ -187,4 +187,55 @@ expect_fail "app/b.yaml: ghcr.io/lepinoid/plugin-updater:1-a must be pinned" che
 pod_with_images b busybox@sha256:abc >"$root/app/b.yaml"
 expect_fail "app/b.yaml: busybox@sha256:abc has an invalid digest" check_digest_pins "$root" app/b.yaml
 
+pod_with_images d ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-f434bcb >"$root/app/d.yaml"
+expect_fail "app/d.yaml: ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-f434bcb must be pinned" check_digest_pins "$root" app/d.yaml
+
+pod_with_images d "ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-f434bcb@$digest_a" >"$root/app/d.yaml"
+expect_ok check_digest_pins "$root" app/d.yaml
+
+pod_with_images d "ghcr.io/lepinoid/dsh-agent@$digest_a" >"$root/app/d.yaml"
+expect_fail "app/d.yaml: ghcr.io/lepinoid/dsh-agent@$digest_a must have a valid tag" check_digest_pins "$root" app/d.yaml
+
+pod_with_images d "ghcr.io/lepinoid/plugin-updater@$digest_a" >"$root/app/d.yaml"
+expect_fail "app/d.yaml: ghcr.io/lepinoid/plugin-updater@$digest_a must have a valid tag" check_digest_pins "$root" app/d.yaml
+
+pod_with_images d "busybox@$digest_a" >"$root/app/d.yaml"
+expect_ok check_digest_pins "$root" app/d.yaml
+
+pod_with_images d "ghcr.io/lepinoid/dsh-agent:@$digest_a" >"$root/app/d.yaml"
+expect_fail "app/d.yaml: ghcr.io/lepinoid/dsh-agent:@$digest_a must have a valid tag" check_digest_pins "$root" app/d.yaml
+
+pod_with_images d "ghcr.io/lepinoid/plugin-updater:@$digest_a" >"$root/app/d.yaml"
+expect_fail "app/d.yaml: ghcr.io/lepinoid/plugin-updater:@$digest_a must have a valid tag" check_digest_pins "$root" app/d.yaml
+
+pod_with_images d "ghcr.io/lepinoid/dsh-agent:-bad@$digest_a" >"$root/app/d.yaml"
+expect_fail "app/d.yaml: ghcr.io/lepinoid/dsh-agent:-bad@$digest_a must have a valid tag" check_digest_pins "$root" app/d.yaml
+
+pod_with_images d "ghcr.io/lepinoid/dsh-agent:a:b@$digest_a" >"$root/app/d.yaml"
+expect_fail "app/d.yaml: ghcr.io/lepinoid/dsh-agent:a:b@$digest_a must have a valid tag" check_digest_pins "$root" app/d.yaml
+
+pod_with_images d "ghcr.io/lepinoid/dsh-agent:v1_2.3-rc@$digest_a" >"$root/app/d.yaml"
+expect_ok check_digest_pins "$root" app/d.yaml
+
+# 参照の形の抜け道: "@" の複数、空白、大文字の hex、sha256 以外、大文字の repository
+upper_hex=sha256:$(printf 'A%.0s' {1..64})
+sha512=sha512:$(printf 'a%.0s' {1..128})
+expect_invalid_ref() {
+  local image=$1 pattern=$2
+  pod_with_images d "$image" >"$root/app/d.yaml"
+  expect_fail "app/d.yaml: $image $pattern" check_digest_pins "$root" app/d.yaml
+}
+expect_invalid_ref "ghcr.io/lepinoid/dsh-agent:v1@$digest_a@$digest_a" "has an invalid digest"
+expect_invalid_ref "ghcr.io/lepinoid/plugin-updater:v1@$digest_a@$digest_b" "has an invalid digest"
+expect_invalid_ref "ghcr.io/lepinoid/dsh-agent:v1@$digest_a@" "has an invalid digest"
+expect_invalid_ref "ghcr.io/lepinoid/dsh-agent:v1@$upper_hex" "has an invalid digest"
+expect_invalid_ref "ghcr.io/lepinoid/dsh-agent:v1@$sha512" "has an invalid digest"
+expect_invalid_ref "ghcr.io/lepinoid/dsh-agent:v1@${digest_a}x" "has an invalid digest"
+expect_invalid_ref "ghcr.io/lepinoid/dsh-agent:v1@ $digest_a" "has an invalid digest"
+expect_invalid_ref "ghcr.io/lepinoid/dsh-agent @$digest_a" "has an invalid image reference"
+expect_invalid_ref "ghcr.io/lepinoid/dsh-agent:v1 @$digest_a" "has an invalid image reference"
+expect_invalid_ref "ghcr.io/lepinoid/dsh-agent:v1@@$digest_a" "has an invalid digest"
+expect_invalid_ref "ghcr.io/Lepinoid/Dsh-Agent:v1" "must be pinned as <tag>@sha256:<digest>"
+expect_invalid_ref "GHCR.IO/lepinoid/dsh-agent@$digest_a" "must have a valid tag"
+
 echo "manifest-checks tests passed"

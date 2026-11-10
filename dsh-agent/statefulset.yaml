@@ -1,0 +1,122 @@
+# DeepSeek Harness（dsh、web profile）の専用 Pod。dev の調整作業を LLM エージェントと共同で行うための PoC（Lepinoid/infra#79）。
+# - 公開しない。dsh は 127.0.0.1:3080 で待ち受け、kubectl port-forward pod/dsh-agent-0 3080:3080 で使う（README の「dsh-agent」節）。
+# - サンドボックスは Landlock（D0 の実測: restricted 相当の securityContext のままで fully enforced。bwrap は不要）。
+# - イメージは Lepinoid/dsh-agent が作る（tag@digest で固定。ci/check-manifests.sh が検査する）。
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: dsh-agent
+  labels:
+    app.kubernetes.io/name: lepinoid-dev-agent
+spec:
+  serviceName: dsh-agent
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lepinoid-dev-agent
+  template:
+    metadata:
+      labels:
+        # runtime の MCP（8083）の ingress が選ぶラベル（lepinoid/network-policy.yaml の lepinoid-pool-runtime-mcp-deny と
+        # lepinoid-pool-runtime）。変えるときは両方と、dsh-agent/network-policy.yaml を合わせる。
+        app.kubernetes.io/name: lepinoid-dev-agent
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        # 再帰的な権限変更で $DSH_HOME/.credentials.yaml にグループ権限が付くと、dsh は owner のみ読める条件の検査で
+        # 起動を拒否する。ルートの所有者が合っていれば再帰変更を行わない。
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: dsh-agent
+          image: ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-f434bcb@sha256:e80b6c1ac184849447198fdffe8b10c50a04e28074d4d6f809a20233c6bc67a2
+          imagePullPolicy: IfNotPresent
+          # ENTRYPOINT / CMD（serve）はイメージのまま。起動時にパッケージを取得しない。
+          # 待ち受けは既定の 127.0.0.1:3080（DSH_HOST は設定しない）。ワイルドカードは dsh が拒否する。
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 500m, memory: 1Gi}
+            limits: {cpu: "2", memory: 3Gi}
+          env:
+            - {name: DSH_HOME, value: /data/dsh}
+            - {name: HOME, value: /data/home}
+            # Neuralwatt（llm-pi-ai のルート neuralwatt の apiKeyEnv）。optional にしない（キーがなければ起動させない）。
+            # 値の SOPS 暗号化はユーザー本人が行う（dsh-agent/secrets.sops.yaml）。UI からはキーを保存しない
+            # （.credentials.yaml の保存値が環境変数より優先されるため）。環境変数は起動時のスナップショットなので、
+            # 変更後は kubectl -n lepinoid rollout restart statefulset/dsh-agent が要る。
+            - name: NEURALWATT_API_KEY
+              valueFrom:
+                secretKeyRef: {name: dsh-agent-secrets, key: NEURALWATT_API_KEY}
+            # dev 限定の MCP（runtime の 8083）の Bearer token。Secret lepinoid-dev-mcp は段階 1（infra#78）が作る。
+            # 未作成でも Pod が起動するよう optional にする。回転は Secret の更新と runtime・本 Pod の再起動。
+            - name: LEPINOID_MCP_TOKEN
+              valueFrom:
+                secretKeyRef: {name: lepinoid-dev-mcp, key: token, optional: true}
+          # loopback の 3080 への接続を試す（kubelet の httpGet は Pod IP へ向かうので使えない）。
+          startupProbe:
+            exec:
+              command:
+                - node
+                - -e
+                - |
+                  const s = require("net").connect({ host: "127.0.0.1", port: 3080 });
+                  s.on("connect", () => process.exit(0));
+                  s.on("error", () => process.exit(1));
+                  setTimeout(() => process.exit(1), 3000);
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command:
+                - node
+                - -e
+                - |
+                  const s = require("net").connect({ host: "127.0.0.1", port: 3080 });
+                  s.on("connect", () => process.exit(0));
+                  s.on("error", () => process.exit(1));
+                  setTimeout(() => process.exit(1), 3000);
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command:
+                - node
+                - -e
+                - |
+                  const s = require("net").connect({ host: "127.0.0.1", port: 3080 });
+                  s.on("connect", () => process.exit(0));
+                  s.on("error", () => process.exit(1));
+                  setTimeout(() => process.exit(1), 3000);
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            # DSH_HOME（/data/dsh）、HOME（/data/home）、サンドボックスの作業ルート（/data/work）はすべて PVC 上。
+            - {name: data, mountPath: /data}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: tmp, emptyDir: {}}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: longhorn
+        resources:
+          requests:
+            storage: 20Gi

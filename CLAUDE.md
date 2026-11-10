@@ -39,6 +39,7 @@ SOPS の Age 秘密鍵は `SOPS_AGE_KEY_CMD` 経由で Bitwarden CLI (`rbw get l
 - **クラスタスコープリソース（ClusterRole, CRD, PV 等）は作成不可**
 - Secret ファイルは `*.sops.yaml` の命名規則に従う（`.sops.yaml` の `path_regex` に一致させる）。暗号化済みであること、それ以外のファイルに値を持つ Secret を置かないことを CI で検査する
 - `ghcr.io/lepinoid/plugin-updater` は `<tag>@sha256:<digest>` で固定する。digest で固定した同じ image は、同じトップレベルディレクトリ内ですべて同じ参照にそろえる（CI で検査）
+- `ghcr.io/lepinoid/dsh-agent` も `<tag>@sha256:<digest>` で固定する（CI で検査。`MANIFEST_DIGEST_REQUIRED_IMAGES`）
 - `kustomization.yaml` に含めない手動適用のマニフェスト（例: `build-server/rescue-pod.yaml`）も、同じ CI 検査の対象になる
 
 ## GitHub Actions Rules
@@ -78,6 +79,7 @@ kustomization.yaml          ← 全リソースのエントリポイント
 │   └── Cloudflare Access auth proxy (Cf-Access-Authenticated-User-Email ヘッダー)
 ├── lepinoid/               ← dev server (Velocity + Minestom runtime pool, PostgreSQL, NATS, ワールド配布)
 │   └── dev 限定の MCP (runtime のポート 8083): token は専用 Secret `lepinoid-dev-mcp`、到達元は CiliumNetworkPolicy の ingressDeny でエージェント Pod (`lepinoid-dev-agent`) 以外を拒否（標準 NetworkPolicy の許可は加算されるため）
+├── dsh-agent/              ← dev 調整用の LLM エージェント dsh の専用 Pod (StatefulSet + PVC)。公開しない（port-forward で使う）。外向きは標準 NetworkPolicy の許可と CiliumNetworkPolicy の egressDeny で絞る。Secret `dsh-agent-secrets` はキーの保持者が暗号化する
 └── build-server/           ← ビルドサーバー (PaperMC + MySQL) と plugin-updater の CronJob
 
 updater/                    ← plugin-updater (Go)。build-server の LepinoidTools を、プレイヤーの退出を待ってから安全に更新する

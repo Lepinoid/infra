@@ -9,7 +9,8 @@ MANIFEST_KUBERNETES_VERSION=${MANIFEST_KUBERNETES_VERSION:-1.35.0}
 MANIFEST_SKIP_KINDS=${MANIFEST_SKIP_KINDS:-HelmRelease,HelmRepository,OCIRepository,CiliumNetworkPolicy}
 # tag だけでなく digest まで固定しなければならない image。
 # plugin-updater は initContainer・sidecar・CronJob で同じ版が動く前提のため、可変 tag を許さない。
-MANIFEST_DIGEST_REQUIRED_IMAGES=${MANIFEST_DIGEST_REQUIRED_IMAGES:-ghcr.io/lepinoid/plugin-updater}
+# dsh-agent は PVC 上の状態を持つ StatefulSet で、tag の付け替えによる意図しない版の切り替えを防ぐ。空白区切り。
+MANIFEST_DIGEST_REQUIRED_IMAGES=${MANIFEST_DIGEST_REQUIRED_IMAGES:-ghcr.io/lepinoid/plugin-updater ghcr.io/lepinoid/dsh-agent}
 
 # 先頭がドットでないトップレベルディレクトリ直下の YAML を、ROOT からの相対パスで列挙する。
 manifest_files() {
@@ -117,31 +118,54 @@ manifest_images() {
 
 # image 参照から tag と digest を除いた repository を返す。
 image_repository() {
-  local name=${1%%@*}
+  local name=${1%%@*} last
   # ":" が最後の "/" より後ろにあるときだけ tag とみなす（registry のポート番号を残す）。
-  if [[ ${name##*/} == *:* ]]; then
-    name=${name%:*}
+  # 最初の ":" 以降を tag 扱いにする（"repo:a:b" のような不正な参照でも repository を取り違えない）。
+  last=${name##*/}
+  if [[ $last == *:* ]]; then
+    name=${name%"$last"}${last%%:*}
   fi
   printf '%s\n' "$name"
 }
 
 # digest 固定のルール:
-# - MANIFEST_DIGEST_REQUIRED_IMAGES の image は tag@sha256:<64 桁> で固定する
-# - digest を付けるなら sha256 の完全な値にする
+# - MANIFEST_DIGEST_REQUIRED_IMAGES の image は tag@sha256:<64 桁> で固定する（tag は必須。digest だけは不可）
+# - 参照は最初の "@" で <repo>[:<tag>] と <digest> に分け、digest 全体が sha256:<小文字 64 桁> に一致すること
+#   （"@" の複数、空白、大文字の hex、sha512 などは digest の不一致として拒否する）。<repo>[:<tag>] 側は
+#   [A-Za-z0-9._/:-] だけ（空白などがあると repository を取り違えて必須の検査を素通りするため）
+# - 必須の repository の比較は大文字小文字を区別しない（OCI の repository は小文字だが、大文字で書いても素通りさせない）
 # - 同じトップレベルディレクトリで digest 固定した同じ repository は、すべて同じ参照にする
 check_digest_pins() {
-  local root=$1 file image repo key status=0
+  local root=$1 file image base digest repo repo_lc ref_name key status=0
   shift
   local -A first_ref first_file
   while IFS=$'\t' read -r file image; do
+    base=${image%%@*}
+    digest=
+    [[ $image == *@* ]] && digest=${image#*@}
+    if [[ ! $base =~ ^[A-Za-z0-9._/:-]+$ ]]; then
+      echo "digest: $file: $image has an invalid image reference" >&2
+      status=1
+      continue
+    fi
     repo=$(image_repository "$image")
-    if [[ $image == *@* && ! $image =~ @sha256:[0-9a-f]{64}$ ]]; then
+    repo_lc=${repo,,}
+    if [[ $image == *@* && ! $digest =~ ^sha256:[0-9a-f]{64}$ ]]; then
       echo "digest: $file: $image has an invalid digest" >&2
       status=1
       continue
     fi
-    if [[ " $MANIFEST_DIGEST_REQUIRED_IMAGES " == *" $repo "* && $image != *@* ]]; then
+    if [[ " ${MANIFEST_DIGEST_REQUIRED_IMAGES,,} " == *" $repo_lc "* && $image != *@* ]]; then
       echo "digest: $file: $image must be pinned as <tag>@sha256:<digest>" >&2
+      status=1
+      continue
+    fi
+    # tag がない（digest だけ）・空・不正な文字の参照は、どの版か読めないので受理しない。
+    # tag は [A-Za-z0-9_][A-Za-z0-9_.-]{0,127}（OCI の distribution spec）。
+    ref_name=${base##*/}
+    if [[ " ${MANIFEST_DIGEST_REQUIRED_IMAGES,,} " == *" $repo_lc "* ]] &&
+      { [[ $ref_name != *:* ]] || [[ ! ${ref_name#*:} =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; }; then
+      echo "digest: $file: $image must have a valid tag (<tag>@sha256:<digest>)" >&2
       status=1
       continue
     fi
