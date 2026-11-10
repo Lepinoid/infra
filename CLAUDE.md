@@ -39,7 +39,7 @@ SOPS の Age 秘密鍵は `SOPS_AGE_KEY_CMD` 経由で Bitwarden CLI (`rbw get l
 - **クラスタスコープリソース（ClusterRole, CRD, PV 等）は作成不可**
 - Secret ファイルは `*.sops.yaml` の命名規則に従う（`.sops.yaml` の `path_regex` に一致させる）。暗号化済みであること、それ以外のファイルに値を持つ Secret を置かないことを CI で検査する
 - `ghcr.io/lepinoid/plugin-updater` は `<tag>@sha256:<digest>` で固定する。digest で固定した同じ image は、同じトップレベルディレクトリ内ですべて同じ参照にそろえる（CI で検査）
-- `ghcr.io/lepinoid/dsh-agent` も `<tag>@sha256:<digest>` で固定する（CI で検査。`MANIFEST_DIGEST_REQUIRED_IMAGES`）
+- `ghcr.io/lepinoid/dsh-agent` と `ghcr.io/lepinoid/neuralwatt-exporter` も `<tag>@sha256:<digest>` で固定する（CI で検査。`MANIFEST_DIGEST_REQUIRED_IMAGES`）。neuralwatt-exporter は公開前のプレースホルダ digest（0 を 64 個）を `neuralwatt-exporter/deployment.yaml` に置き、`kustomization.yaml` には入れない（入れると CI が失敗する）。公開後に実際の digest に置き換える PR で `kustomization.yaml` へ追加する（README の「neuralwatt-exporter」節）
 - `kustomization.yaml` に含めない手動適用のマニフェスト（例: `build-server/rescue-pod.yaml`）も、同じ CI 検査の対象になる
 
 ## GitHub Actions Rules
@@ -79,10 +79,12 @@ kustomization.yaml          ← 全リソースのエントリポイント
 │   └── Cloudflare Access auth proxy (Cf-Access-Authenticated-User-Email ヘッダー)
 ├── lepinoid/               ← dev server (Velocity + Minestom runtime pool, PostgreSQL, NATS, ワールド配布)
 │   └── dev 限定の MCP (runtime のポート 8083): token は専用 Secret `lepinoid-dev-mcp`、到達元は CiliumNetworkPolicy の ingressDeny でエージェント Pod (`lepinoid-dev-agent`) 以外を拒否（標準 NetworkPolicy の許可は加算されるため）
+├── neuralwatt-exporter/    ← Neuralwatt の残高・使用量・キーの上限の Prometheus exporter (ghcr.io/lepinoid/neuralwatt-exporter、コードは exporters/neuralwatt/)。Service なし・Secret `dsh-agent-secrets` の API キー 1 キーだけをファイルで投影。外向きは標準 NetworkPolicy の許可と CiliumNetworkPolicy の egressDeny で絞る。scrape・アラートは turtton/infra 側 (PodMonitor・PrometheusRule)。ダッシュボードは grafana/dashboard-neuralwatt.yaml
 ├── dsh-agent/              ← dev 調整用の LLM エージェント dsh の専用 Pod (StatefulSet + PVC)。公開しない（port-forward で使う）。外向きは標準 NetworkPolicy の許可と CiliumNetworkPolicy の egressDeny で絞る。Secret `dsh-agent-secrets` はキーの保持者が暗号化する
 └── build-server/           ← ビルドサーバー (PaperMC + MySQL) と plugin-updater の CronJob
 
 updater/                    ← plugin-updater (Go)。build-server の LepinoidTools を、プレイヤーの退出を待ってから安全に更新する
+exporters/neuralwatt/       ← neuralwatt-exporter (Go)。Neuralwatt の GET /v1/quota を一定間隔で取得して /metrics で返す。テストは ci/check-neuralwatt-exporter.sh
 ci/                         ← workflow から呼ぶスクリプトと、そのテスト (ci/lib/*_test.sh)
 terraform/                  ← Cloudflare（Tunnel・DNS・Access）の OpenTofu 構成 (PR の /tf-apply で適用)
 ```

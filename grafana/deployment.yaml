@@ -76,6 +76,11 @@ spec:
         - name: grafana-dashboard-provisioning
           configMap:
             name: grafana-dashboard-provisioning
+        # ダッシュボードごとの ConfigMap を 1 つのディレクトリに並べる（provisioning の path は /var/lib/grafana/dashboards 1 つ）。
         - name: grafana-dashboards
-          configMap:
-            name: grafana-dashboards
+          projected:
+            sources:
+              - configMap:
+                  name: grafana-dashboards
+              - configMap:
+                  name: grafana-dashboards-neuralwatt

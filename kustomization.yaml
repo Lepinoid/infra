@@ -18,6 +18,7 @@ resources:
   - grafana/datasource.yaml
   - grafana/dashboard-provisioning.yaml
   - grafana/dashboard-lepinoid-pods.yaml
+  - grafana/dashboard-neuralwatt.yaml
   - grafana/pvc.yaml
   - grafana/deployment.yaml
   - grafana/service.yaml
@@ -43,6 +44,8 @@ resources:
   - dsh-agent/statefulset.yaml
   - dsh-agent/service.yaml
   - dsh-agent/network-policy.yaml
+  # neuralwatt-exporter/deployment.yaml は、イメージの公開後に digest を固定する PR で追加する（README の「neuralwatt-exporter」節）。
+  - neuralwatt-exporter/network-policy.yaml
   - build-server/mysql-credentials.sops.yaml
   - build-server/git-credentials.sops.yaml
   - build-server/lepinoid-tools-config.sops.yaml

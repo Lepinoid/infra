@@ -9,8 +9,9 @@ MANIFEST_KUBERNETES_VERSION=${MANIFEST_KUBERNETES_VERSION:-1.35.0}
 MANIFEST_SKIP_KINDS=${MANIFEST_SKIP_KINDS:-HelmRelease,HelmRepository,OCIRepository,CiliumNetworkPolicy}
 # tag だけでなく digest まで固定しなければならない image。
 # plugin-updater は initContainer・sidecar・CronJob で同じ版が動く前提のため、可変 tag を許さない。
-# dsh-agent は PVC 上の状態を持つ StatefulSet で、tag の付け替えによる意図しない版の切り替えを防ぐ。空白区切り。
-MANIFEST_DIGEST_REQUIRED_IMAGES=${MANIFEST_DIGEST_REQUIRED_IMAGES:-ghcr.io/lepinoid/plugin-updater ghcr.io/lepinoid/dsh-agent}
+# dsh-agent は PVC 上の状態を持つ StatefulSet で、tag の付け替えによる意図しない版の切り替えを防ぐ。
+# neuralwatt-exporter は Neuralwatt の API キーを読む Pod で、tag の付け替えによる意図しないコードの差し替えを防ぐ。空白区切り。
+MANIFEST_DIGEST_REQUIRED_IMAGES=${MANIFEST_DIGEST_REQUIRED_IMAGES:-ghcr.io/lepinoid/plugin-updater ghcr.io/lepinoid/dsh-agent ghcr.io/lepinoid/neuralwatt-exporter}
 
 # 先頭がドットでないトップレベルディレクトリ直下の YAML を、ROOT からの相対パスで列挙する。
 manifest_files() {
@@ -176,6 +177,26 @@ check_digest_pins() {
       first_file[$key]=$file
     elif [[ ${first_ref[$key]} != "$image" ]]; then
       echo "digest: $file: $image differs from ${first_ref[$key]} in ${first_file[$key]}" >&2
+      status=1
+    fi
+  done < <(manifest_images "$root" "$@")
+  return "$status"
+}
+
+# 公開前のプレースホルダ digest（64 個の 0）は、kustomization.yaml から参照されるマニフェストに入れない
+# （入れると Flux が存在しない image を pull しようとする）。kustomization.yaml に含めないマニフェストでは許す
+# （neuralwatt-exporter/deployment.yaml は、イメージの公開後に実際の digest へ置き換える PR で kustomization.yaml に追加する）。
+check_placeholder_digests() {
+  local root=$1 file image status=0
+  shift
+  local -A standalone=()
+  while IFS= read -r file; do
+    standalone[$file]=1
+  done < <(manifest_standalone_files "$root")
+  while IFS=$'\t' read -r file image; do
+    [[ -n ${standalone[$file]:-} ]] && continue
+    if [[ $image =~ @sha256:0{64}$ ]]; then
+      echo "placeholder: $file: $image has a placeholder digest but is referenced from kustomization.yaml" >&2
       status=1
     fi
   done < <(manifest_images "$root" "$@")

@@ -1,0 +1,70 @@
+# neuralwatt-exporter（app.kubernetes.io/name=neuralwatt-exporter）の外向きを、DNS と公開の 443（api.neuralwatt.com:443）だけに絞る。
+# 形は dsh-agent/network-policy.yaml と同じ。
+#
+# クラスタ側（turtton/infra）の base が全 Pod に default-deny を適用し、さらに「同 namespace の全 Pod への egress」
+# （allow-dns-egress）と monitoring の 9090・3100（allow-monitoring-egress）を許可している。標準の NetworkPolicy の許可は
+# 加算されるので、この許可は下の標準の NetworkPolicy では狭められない。狭めるのは CiliumNetworkPolicy の egressDeny
+# （deny は base の許可にも優先する。前例は arc/network-policy.yaml の arc-runner-isolation と dsh-agent/network-policy.yaml）。
+#
+# ingress は変更しない（policyTypes に Ingress を入れない）。base の許可（monitoring namespace から全 Pod・全ポート）で、
+# Prometheus が 8080 を scrape できる。
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: neuralwatt-exporter
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: neuralwatt-exporter}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    # 私設アドレス帯を除く公開の TCP 443（api.neuralwatt.com:443 を含む）。FQDN の許可リストにはしない
+    # （toFQDNs による絞り込みは別の作業）。
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 100.64.0.0/10
+              - 169.254.0.0/16
+      ports:
+        - {protocol: TCP, port: 443}
+---
+# 明示的な deny。CIDR の deny がクラスタ内の endpoint に効くかは公式資料で確認できていないため、arc-runner-isolation・
+# dsh-agent-egress-deny と同じく toEndpoints・toEntities・toCIDRSet を併用する。
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: neuralwatt-exporter-egress-deny
+spec:
+  endpointSelector:
+    matchLabels: {app.kubernetes.io/name: neuralwatt-exporter}
+  egressDeny:
+    - toEndpoints:
+        # lepinoid namespace の全 Pod（app.kubernetes.io/name のない Pod にも一致する）
+        - matchLabels: {"k8s:io.kubernetes.pod.namespace": lepinoid}
+        # monitoring を含む、lepinoid・kube-system 以外の namespace の全 Pod
+        - matchExpressions:
+            - {key: "k8s:io.kubernetes.pod.namespace", operator: Exists}
+            - {key: "k8s:io.kubernetes.pod.namespace", operator: NotIn, values: [lepinoid, kube-system]}
+        # kube-system の kube-dns 以外
+        - matchLabels: {"k8s:io.kubernetes.pod.namespace": kube-system}
+          matchExpressions:
+            - {key: "k8s:k8s-app", operator: NotIn, values: [kube-dns]}
+    - toEntities: [host, remote-node, kube-apiserver]
+    - toCIDRSet:
+        - cidr: 10.0.0.0/8
+        - cidr: 172.16.0.0/12
+        - cidr: 192.168.0.0/16
+        - cidr: 100.64.0.0/10
+        - cidr: 169.254.0.0/16

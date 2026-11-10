@@ -32,6 +32,7 @@ run() {
 run "kustomize build + kubeconform" render_and_validate "$root"
 run "container resources" check_resources "$root" "${files[@]}"
 run "plugin-updater / digest pins" check_digest_pins "$root" "${files[@]}"
+run "placeholder digests" check_placeholder_digests "$root" "${files[@]}"
 run "SOPS encryption" check_sops "$root" "${files[@]}"
 
 if ((${#failed[@]} > 0)); then
