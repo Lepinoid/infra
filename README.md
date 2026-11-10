@@ -14,6 +14,7 @@ Flux CD がこのリポジトリを監視し、`lepinoid` namespace にリソー
 | **Grafana** | Prometheus 接続のモニタリングダッシュボード。Cloudflare Access 認証 |
 | **Dev server (lepinoid)** | Velocity + Minestom runtime pool の dev サーバーとワールド配布（下記） |
 | **[dsh-agent](#dsh-agent-lepinoid-dev-agent)** | dev の調整作業を LLM エージェントと共同で行うための DeepSeek Harness（`dsh`）の専用 Pod。公開せず `kubectl port-forward` で使う（PoC） |
+| **[neuralwatt-exporter](#neuralwatt-exporter)** | Neuralwatt（dsh-agent のモデル提供元）の残高・当月の使用量・キーの上限を Prometheus の指標にする exporter と、Grafana のダッシュボード「Neuralwatt」。scrape・アラートは turtton/infra 側 |
 | **[Build server](build-server/README.md)** | PaperMC のビルドサーバー。LepinoidTools は [plugin-updater](updater/README.md) が更新する |
 
 ## Secret Management
@@ -42,6 +43,8 @@ sops path/to/secret.sops.yaml
 | `static-checks.yml` | すべての PR と main への push | マニフェストと workflow の静的チェック（下記） |
 | `shell-tests.yml` | `ci/**`・`lepinoid/*.sh` の変更 | `ci/lib/*_test.sh` と shell の構文チェック |
 | `plugin-updater-tests.yml` | `updater/**` の変更 | plugin-updater の `go test` / `go vet` |
+| `neuralwatt-exporter-tests.yml` | `exporters/neuralwatt/**`・ダッシュボードの変更 | neuralwatt-exporter の `gofmt` / `go test -race` / `go vet`、イメージのビルドと起動確認（push しない） |
+| `neuralwatt-exporter-image.yml` | タグ `neuralwatt-exporter-*`・手動実行 | テストの後、`ghcr.io/lepinoid/neuralwatt-exporter:<yy.mm.dd>-<sha5>` を公開して digest を出す（[手順](#neuralwatt-exporter)） |
 | `terraform-check.yml` | Terraform・関連 workflow の変更 PR | Secret を使わない `tofu fmt` / `tofu validate` |
 | `terraform-apply.yml` | `turtton` が `main` から手動実行 | plan の件数確認後、保存した plan を apply して暗号化 state を更新 |
 
@@ -55,8 +58,9 @@ PR コメントの `/tf-apply` は使用しない。属性値を含む詳細 pla
 
 1. `kustomize build .` が通り、出力と手動適用のマニフェスト（`kustomization.yaml` に含めないもの）が kubeconform の strict 検証に通る。対象の Kubernetes の版と、検証しない CRD（HelmRelease・HelmRepository・CiliumNetworkPolicy）は `ci/lib/manifest-checks.sh` で指定する
 2. Pod を作る全コンテナ（initContainers を含む）に `requests` / `limits` の `cpu` と `memory` がある
-3. `ghcr.io/lepinoid/plugin-updater` が `<tag>@sha256:<digest>` で固定され、digest で固定した同じ image が同じトップレベルディレクトリ内で同じ参照になっている
+3. `ghcr.io/lepinoid/plugin-updater`・`dsh-agent`・`neuralwatt-exporter`（`MANIFEST_DIGEST_REQUIRED_IMAGES`）が `<tag>@sha256:<digest>` で固定され、digest で固定した同じ image が同じトップレベルディレクトリ内で同じ参照になっている
 4. `*.sops.yaml` が SOPS で暗号化済み（age の受信者と MAC があり、`data` / `stringData` の値がすべて `ENC[...]`）で、それ以外のファイルに値を持つ Secret がない
+5. 公開前のプレースホルダ digest（0 を 64 個）が、`kustomization.yaml` から参照されるマニフェストに入っていない（`kustomization.yaml` に含めない `neuralwatt-exporter/deployment.yaml` では許す。[手順](#neuralwatt-exporter)）
 
 ### Static checks / GitHub Actions workflows
 
@@ -70,6 +74,7 @@ Nix の devShell に必要なツールが入っている。CI で使う版と sh
 ```bash
 ci/check-manifests.sh                                    # Manifests
 bash ci/lib/manifest-checks_test.sh                      # チェック自体のテスト
+ci/check-neuralwatt-exporter.sh                          # neuralwatt-exporter の gofmt・テスト・vet（docker が要る）
 GITHUB_TOKEN=$(gh auth token) pinact run --check --verify
 GH_TOKEN=$(gh auth token) zizmor .
 ```
@@ -164,6 +169,72 @@ URL のホストを `127.0.0.1:3080` にしてブラウザで開く。認証は 
   3. Actions のリポジトリアクセス: Package settings の「Manage Actions access」は、**GitHub Actions のワークフロー（`GITHUB_TOKEN`）がパッケージを使う**ための設定で、`ghcr-pull-secret` の token（PAT）の権限とは別。クラスタからの pull には効かないので、ここを直しても pull は通らない。公開側の workflow が push できているかとは分けて考える。
 
   token を差し替える場合は `lepinoid/ghcr-pull-secret.sops.yaml` を更新する（ほかの非公開イメージも引くため、権限を減らさない）。
+
+## neuralwatt-exporter
+
+dsh-agent が使う Neuralwatt の**残高・当月の使用量・キーの上限**を Prometheus の指標にし、Grafana のダッシュボード「Neuralwatt」（`grafana.lepinoid.net`、uid `neuralwatt`）で見られるようにする（[Lepinoid/infra#84](https://github.com/Lepinoid/infra/issues/84)）。月 20 ドル程度の予算（段階 2 の停止線: 累計 10 ドルで見直し、16 ドルで任意項目を止める）を、Neuralwatt のポータルを開かずに確認するためのもの。
+
+- コード: [`exporters/neuralwatt/`](exporters/neuralwatt)（Go。依存は `prometheus/client_golang`）。`GET https://api.neuralwatt.com/v1/quota` をバックグラウンドで 1 本だけ、`NEURALWATT_POLL_INTERVAL`（既定 60 秒、下限 10 秒）ごとに呼び、最後に成功した値を `/metrics` で返す（scrape では API を呼ばない）。**取得に失敗したときは値を 0 にせず**、直前の成功の値を残し、`neuralwatt_exporter_fetch_success 0` と `neuralwatt_exporter_fetches_total{result=…}` で失敗を表す。一度も成功していなければデータ系列は出ない。値が `null` の系列（サブスクリプションなし、キーの上限なしなど）も出さない。
+- 配備: `neuralwatt-exporter/deployment.yaml`（1 レプリカ。Service なし）。Pod のラベル `app.kubernetes.io/name: neuralwatt-exporter`、コンテナポート 8080（名前 `metrics`）、パス `/metrics`。`neuralwatt-exporter/network-policy.yaml` で外向きを DNS と公開の TCP 443 だけにする（形は dsh-agent と同じ。ingress は変更せず、base の許可で Prometheus が scrape できる）。
+- API キー: dsh-agent と**同じ** Secret `dsh-agent-secrets` のキー `NEURALWATT_API_KEY` だけを、読み取り専用のファイル（`/var/run/neuralwatt/api-key`）として投影する。実装者・エージェントはキーの値を扱わない。ログ・`/metrics`・エラー文にキーは出ない（テストで検査している）。
+- scrape とアラート（PodMonitor・PrometheusRule）は、`lepinoid-deployer` に `monitoring.coreos.com` の権限がないため [turtton/infra#195](https://github.com/turtton/infra/issues/195) で扱う。それが着地するまで、ダッシュボードは Prometheus にデータがなく空になる。
+- `daily free energy`（無料枠の当日の残量）は公開 API がなく、ダッシュボードには出ない（ポータルで見る）。
+
+### 指標
+
+| 指標 | 型 | ラベル |
+|---|---|---|
+| `neuralwatt_exporter_fetch_success` | gauge（1=直近の取得が成功、0=失敗。最初の取得が終わるまで出ない） | — |
+| `neuralwatt_exporter_last_success_timestamp_seconds` | gauge（未成功は 0） | — |
+| `neuralwatt_exporter_fetch_duration_seconds` | gauge | — |
+| `neuralwatt_exporter_fetches_total` | counter（0 で初期化） | `result`＝`ok`・`unauthorized`・`payment_required`・`rate_limited`・`server_error`・`client_error`・`network_error`・`invalid_response`・`credential_error` |
+| `neuralwatt_quota_snapshot_timestamp_seconds` | gauge | — |
+| `neuralwatt_credits_remaining_usd`・`neuralwatt_credits_total_usd` | gauge | — |
+| `neuralwatt_account_info` | gauge（常に 1） | `accounting_method`・`rate_limit_tier` |
+| `neuralwatt_usage_cost_usd_total`・`_requests_total`・`_tokens_total`・`_energy_kwh_total` | counter（`current_month` は暦月の境界で 0 に戻る） | `window`＝`current_month`・`lifetime` |
+| `neuralwatt_limits_overage_limit_usd` | gauge（`null` なら出ない） | — |
+| `neuralwatt_subscription_info` | gauge（常に 1。サブスクリプションなしなら出ない） | `plan`・`status`・`billing_interval` |
+| `neuralwatt_subscription_kwh_included`・`_kwh_used`・`_kwh_remaining`・`neuralwatt_subscription_in_overage`・`neuralwatt_subscription_period_end_timestamp_seconds` | gauge | — |
+| `neuralwatt_key_allowance_limit_usd`・`_spent_usd`・`_remaining_usd`・`neuralwatt_key_allowance_blocked`・`neuralwatt_key_allowance_reset_timestamp_seconds` | gauge（キーに上限がなければ出ない） | `key_name`・`period` |
+| `neuralwatt_monthly_budget_usd` | gauge（`NEURALWATT_MONTHLY_BUDGET_USD` から。未設定なら出ない） | — |
+| `process_start_time_seconds` | gauge（標準の process collector。起動時刻） | — |
+
+`result` の分類: `401`＝`unauthorized`、`402`＝`payment_required`、`429`＝`rate_limited`（`Retry-After` の間は再取得しない。指定された時間は短縮しない。なければ指数バックオフ＋ジッター、上限 10 分）、`5xx`＝`server_error`、その他の `4xx`＝`client_error`、接続失敗・タイムアウト（10 秒）＝`network_error`、不正な JSON・`balance.credits_remaining_usd` の欠落・1 MiB 超・リダイレクト（追従しない）・想定外の 2xx・ラベルになる文字列（`key.name`・`period`・`plan` など）に送信したキーが入っている応答（`/metrics` への漏洩を防ぐため棄却）＝`invalid_response`、キーのファイルが読めない・空・ヘッダに使えない文字＝`credential_error`。
+
+### 確認方法
+
+Service がないので、Pod への proxy で `/metrics` を見る。
+
+```sh
+kubectl -n lepinoid get deploy,pods -l app.kubernetes.io/name=neuralwatt-exporter
+kubectl -n lepinoid logs deploy/neuralwatt-exporter            # 状態の変化（成功↔失敗）と結果の分類だけが出る。キーは出ない
+pod=$(kubectl -n lepinoid get pod -l app.kubernetes.io/name=neuralwatt-exporter -o name | head -1 | cut -d/ -f2)
+kubectl get --raw /api/v1/namespaces/lepinoid/pods/$pod:8080/proxy/metrics | grep -E '^neuralwatt_(exporter_fetch_success|credits_remaining_usd|usage_cost_usd_total)'
+```
+
+値はポータルの表示と突き合わせる。`/healthz` はプロセスが生きていれば 200（API の失敗では落とさない）。API の失敗は `neuralwatt_exporter_fetch_success` で見る（`up` は exporter に届くかどうかだけ）。
+
+### 公開と配備の手順（初回）
+
+イメージの tag と digest は公開してからでないと決まらないので、`neuralwatt-exporter/deployment.yaml` の `image` は**プレースホルダ**（`ghcr.io/lepinoid/neuralwatt-exporter:unpublished@sha256:` ＋ 0 を 64 個）で、ルートの `kustomization.yaml` には入っていない（standalone のマニフェストとして `ci/check-manifests.sh` の対象。プレースホルダのままルートに入れると CI が落ちる）。
+
+1. このリポジトリの PR をマージする（`neuralwatt-exporter/network-policy.yaml` とダッシュボードはこの時点で反映される。Pod はまだない）。
+2. `main` のコミットにタグ `neuralwatt-exporter-<任意の版>` を付けて push するか、Actions の **Publish Neuralwatt exporter** を `main` から手動実行する（`workflow_dispatch`）。テストとイメージのビルド・起動確認の後、`ghcr.io/lepinoid/neuralwatt-exporter:<yy.mm.dd>-<コミット SHA5>` を push し、digest を実行ログに出す。**新しい GHCR パッケージの初回 publish は `requested access to the resource is denied` になることがある**（パッケージとリポジトリの関連付け・可視性は人の作業）。`ghcr-pull-secret` の資格情報がパッケージを読めない場合は、パッケージを公開にする（イメージに秘密はなく、リポジトリも公開）。
+3. 別の PR で、`neuralwatt-exporter/deployment.yaml` の `image` を `ghcr.io/lepinoid/neuralwatt-exporter:<tag>@sha256:<digest>` にし、ルートの `kustomization.yaml` の `resources` に `neuralwatt-exporter/deployment.yaml` を足す（tag だけの参照は `ci/check-manifests.sh` が拒否する）。
+4. マージ後、`kubectl -n lepinoid get deploy,pods -l app.kubernetes.io/name=neuralwatt-exporter` で 1/1 Ready・再起動 0 を確かめ、上の「確認方法」で `neuralwatt_exporter_fetch_success 1` を確認する。
+5. 版を上げるときも 2〜4 を繰り返す（2 回目以降は `image` の差し替えだけ）。
+
+### キーの回転・`402` が出たとき
+
+- **キーの回転は exporter の再起動が要らない。** exporter は取得のたびにキーのファイルを読み直す。`dsh-agent/secrets.sops.yaml` を更新して Flux が適用すると、kubelet が Secret のマウントを更新する（反映まで数分かかることがある）。dsh-agent 側は環境変数のスナップショットなので、従来どおり `kubectl -n lepinoid rollout restart statefulset/dsh-agent` が要る。キーが無効になった間は `neuralwatt_exporter_fetches_total{result="unauthorized"}` が増え、`fetch_success` が 0 になる。
+- **`402`（`payment_required`）**: Neuralwatt はキーが上限（ポータルで設定するキーごとの allowance）に達すると、そのキーのリクエストを `402` で止める。dsh-agent と**同じキー**を使うので、**`/v1/quota` も `402` で取れなくなる可能性がある**。このとき exporter は `fetch_success 0`・`result="payment_required"` で**検知するだけ**で、直前の成功の値（残高・費用）を `/metrics` に残す（古さは `neuralwatt_exporter_last_success_timestamp_seconds` で分かる）。復旧は、ポータルでキーの上限を引き上げるか、上限の期間がリセットされる（`neuralwatt_key_allowance_reset_timestamp_seconds`）のを待つ。別キーへの切り替えはこの作業の範囲外（`402` が実測で出たら別の issue で扱う）。
+- `credential_error` が続くとき: キーのファイルが読めない・空。`kubectl -n lepinoid describe pod -l app.kubernetes.io/name=neuralwatt-exporter` で Secret のマウントのイベントを見る。
+
+### テスト・CI
+
+- `ci/check-neuralwatt-exporter.sh`: docker の `golang` で `gofmt -l`・`go test -race -shuffle=on -count=1 ./...`・`go vet ./...`（`neuralwatt-exporter-tests.yml`）。テストは `httptest` の偽サーバーで、公式ドキュメントの `/v1/quota` の例と `null` の組み合わせ（`testdata/`）を固定し、`/metrics` の出力を golden と比べ、`testutil` の lint を通す。Neuralwatt の API は呼ばない。
+- ダッシュボード（`grafana/dashboard-neuralwatt.yaml`）の全 `expr` の `neuralwatt_*` の名前が、exporter の指標の名前（`testdata/metrics.golden`）に含まれることも、同じテストが検査する。
+- publish workflow は `neuralwatt-exporter-image.yml`（タグ `neuralwatt-exporter-*` または `workflow_dispatch`）。テストの後、イメージをビルドして起動確認（`ci/smoke-neuralwatt-exporter-image.sh`）をしてから push する。
 
 ## ワールド配布 (lepinoid-dev)
 

@@ -238,4 +238,47 @@ expect_invalid_ref "ghcr.io/lepinoid/dsh-agent:v1@@$digest_a" "has an invalid di
 expect_invalid_ref "ghcr.io/Lepinoid/Dsh-Agent:v1" "must be pinned as <tag>@sha256:<digest>"
 expect_invalid_ref "GHCR.IO/lepinoid/dsh-agent@$digest_a" "must have a valid tag"
 
+# --- neuralwatt-exporter は dsh-agent・plugin-updater と同じく tag だけの参照を拒否する ---
+nw=ghcr.io/lepinoid/neuralwatt-exporter
+pod_with_images d "$nw:26.11.10-abcde" >"$root/app/d.yaml"
+expect_fail "app/d.yaml: $nw:26.11.10-abcde must be pinned as <tag>@sha256:<digest>" check_digest_pins "$root" app/d.yaml
+
+pod_with_images d "$nw:latest" >"$root/app/d.yaml"
+expect_fail "app/d.yaml: $nw:latest must be pinned as <tag>@sha256:<digest>" check_digest_pins "$root" app/d.yaml
+
+pod_with_images d "$nw" >"$root/app/d.yaml"
+expect_fail "app/d.yaml: $nw must be pinned as <tag>@sha256:<digest>" check_digest_pins "$root" app/d.yaml
+
+pod_with_images d "$nw@$digest_a" >"$root/app/d.yaml"
+expect_fail "app/d.yaml: $nw@$digest_a must have a valid tag" check_digest_pins "$root" app/d.yaml
+
+pod_with_images d "$nw:26.11.10-abcde@$digest_a" >"$root/app/d.yaml"
+expect_ok check_digest_pins "$root" app/d.yaml
+
+pod_with_images d "$nw:26.11.10-abcde@sha256:abc" >"$root/app/d.yaml"
+expect_fail "has an invalid digest" check_digest_pins "$root" app/d.yaml
+
+# 同じトップレベルディレクトリの neuralwatt-exporter は同じ参照にそろえる
+pod_with_images d "$nw:26.11.10-abcde@$digest_a" >"$root/app/d.yaml"
+pod_with_images e "$nw:26.11.11-fffff@$digest_b" >"$root/app/e.yaml"
+expect_fail "app/e.yaml: $nw:26.11.11-fffff@$digest_b differs from $nw:26.11.10-abcde@$digest_a in app/d.yaml" \
+  check_digest_pins "$root" app/d.yaml app/e.yaml
+rm "$root/app/e.yaml"
+
+# 既定の必須 image に入っている（環境変数で上書きしない限り）
+[[ " $MANIFEST_DIGEST_REQUIRED_IMAGES " == *" $nw "* ]]
+
+# --- check_placeholder_digests: 公開前のプレースホルダ digest は kustomization.yaml の参照先に入れない ---
+placeholder=sha256:$(printf '0%.0s' {1..64})
+# app/deployment.yaml は kustomization.yaml の resources、app/rescue.yaml は含まれない（手動適用）
+pod_with_images ok "$nw:26.11.10-abcde@$digest_a" >"$root/app/deployment.yaml"
+pod_with_images placeholder "$nw:unpublished@$placeholder" >"$root/app/rescue.yaml"
+expect_ok check_placeholder_digests "$root" app/deployment.yaml app/rescue.yaml
+
+pod_with_images placeholder "$nw:unpublished@$placeholder" >"$root/app/deployment.yaml"
+expect_fail "app/deployment.yaml: $nw:unpublished@$placeholder has a placeholder digest but is referenced from kustomization.yaml" \
+  check_placeholder_digests "$root" app/deployment.yaml app/rescue.yaml
+# プレースホルダは形式としては有効な digest なので、check_digest_pins 自体は通す（拒否するのは上の検査）
+expect_ok check_digest_pins "$root" app/deployment.yaml app/rescue.yaml
+
 echo "manifest-checks tests passed"

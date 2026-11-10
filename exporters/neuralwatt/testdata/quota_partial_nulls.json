@@ -1,0 +1,45 @@
+{
+  "snapshot_at": null,
+  "balance": {
+    "credits_remaining_usd": 32.6774,
+    "total_credits_usd": null,
+    "credits_used_usd": 19.6626,
+    "accounting_method": "energy"
+  },
+  "usage": {
+    "lifetime": null,
+    "current_month": {
+      "cost_usd": 160.1463,
+      "requests": 23902,
+      "tokens": 1116658995,
+      "energy_kwh": null
+    }
+  },
+  "limits": {
+    "overage_limit_usd": null,
+    "rate_limit_tier": "standard"
+  },
+  "subscription": {
+    "plan": "standard",
+    "status": "trialing",
+    "billing_interval": null,
+    "current_period_start": null,
+    "current_period_end": null,
+    "auto_renew": null,
+    "kwh_included": null,
+    "kwh_used": null,
+    "kwh_remaining": null,
+    "in_overage": null
+  },
+  "key": {
+    "name": null,
+    "allowance": {
+      "limit_usd": 10,
+      "period": "daily",
+      "spent_usd": null,
+      "remaining_usd": null,
+      "blocked": true,
+      "reset_at": null
+    }
+  }
+}

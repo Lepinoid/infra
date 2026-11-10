@@ -1,0 +1,79 @@
+# Neuralwatt の残高・当月の使用量・キーの上限を Prometheus の指標にする exporter（Lepinoid/infra#84）。
+# - Neuralwatt の GET /v1/quota を一定間隔（既定 60 秒）で 1 本だけ呼び、最後に成功した値を /metrics で返す。
+#   scrape（PodMonitor）とアラートは turtton/infra#195 が扱う。Service は作らない（Prometheus は Pod を直接 scrape する）。
+# - API キーは dsh-agent と同じ Secret dsh-agent-secrets の NEURALWATT_API_KEY だけをファイルとして投影する。
+#   exporter は取得のたびにファイルを読み直すので、キーを替えても再起動は要らない
+#   （kubelet が Secret の更新をマウントへ反映するまでに最大で 1〜2 分かかる）。
+# - イメージはこのリポジトリの exporters/neuralwatt（publish workflow: neuralwatt-exporter-image.yml）。
+#   tag@digest で固定する（ci/check-manifests.sh が検査する）。
+#
+# 【公開前】image の tag と digest はプレースホルダ（digest が 64 個の 0）。publish workflow の実行後に、別の PR で
+# 実際の <tag>@sha256:<digest> に置き換え、あわせてルートの kustomization.yaml に このファイルを追加する
+# （プレースホルダのまま kustomization.yaml に入れると ci/check-manifests.sh が失敗する）。手順は README の「neuralwatt-exporter」節。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: neuralwatt-exporter
+  labels:
+    app.kubernetes.io/name: neuralwatt-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: neuralwatt-exporter
+  template:
+    metadata:
+      labels:
+        # PodMonitor（turtton/infra#195）と neuralwatt-exporter/network-policy.yaml が選ぶラベル。変えるときは両方を合わせる。
+        app.kubernetes.io/name: neuralwatt-exporter
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        # Secret のファイル（defaultMode 0440）をグループ経由で読めるようにする。
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: neuralwatt-exporter
+          image: ghcr.io/lepinoid/neuralwatt-exporter:unpublished@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+          env:
+            - {name: NEURALWATT_API_KEY_FILE, value: /var/run/neuralwatt/api-key}
+            # 月の予算（USD）。指標 neuralwatt_monthly_budget_usd になり、ダッシュボードとアラートの比率の分母に使う。
+            - {name: NEURALWATT_MONTHLY_BUDGET_USD, value: "20"}
+          ports:
+            # PodMonitor が名前 metrics で選ぶ。
+            - {name: metrics, containerPort: 8080, protocol: TCP}
+          # /healthz はプロセスが生きていれば 200（Neuralwatt の API の失敗では落とさない）。
+          readinessProbe:
+            httpGet: {path: /healthz, port: metrics}
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: {path: /healthz, port: metrics}
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - {name: neuralwatt-api-key, mountPath: /var/run/neuralwatt, readOnly: true}
+      volumes:
+        - name: neuralwatt-api-key
+          secret:
+            secretName: dsh-agent-secrets
+            defaultMode: 0440
+            # 他のキー（LEPINOID_MCP_TOKEN など）は投影しない。
+            items:
+              - {key: NEURALWATT_API_KEY, path: api-key}

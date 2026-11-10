@@ -1,0 +1,44 @@
+name: Neuralwatt exporter tests
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'exporters/neuralwatt/**'
+      - 'grafana/dashboard-neuralwatt.yaml'
+      - 'ci/check-neuralwatt-exporter.sh'
+      - 'ci/smoke-neuralwatt-exporter-image.sh'
+      - '.github/workflows/neuralwatt-exporter-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'exporters/neuralwatt/**'
+      - 'grafana/dashboard-neuralwatt.yaml'
+      - 'ci/check-neuralwatt-exporter.sh'
+      - 'ci/smoke-neuralwatt-exporter-image.sh'
+      - '.github/workflows/neuralwatt-exporter-tests.yml'
+permissions: {}
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Check exporter
+        run: ci/check-neuralwatt-exporter.sh
+
+  # publish workflow と同じ Dockerfile を push せずにビルドして起動を確かめる（公開前に Dockerfile の誤りを見つける）。
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Build image (not pushed)
+        run: docker build --platform linux/amd64 -f exporters/neuralwatt/Dockerfile -t neuralwatt-exporter:ci .
+      - name: Smoke test image
+        run: ci/smoke-neuralwatt-exporter-image.sh neuralwatt-exporter:ci

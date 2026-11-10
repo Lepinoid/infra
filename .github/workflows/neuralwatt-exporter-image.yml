@@ -1,0 +1,56 @@
+name: Publish Neuralwatt exporter
+on:
+  workflow_dispatch:
+  push:
+    tags: ['neuralwatt-exporter-*']
+permissions: {}
+concurrency:
+  group: neuralwatt-exporter-image
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.publish.outputs.digest }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Test exporter
+        run: ci/check-neuralwatt-exporter.sh
+      - name: Install pinned tools
+        run: |
+          ci/install-tools.sh "$RUNNER_TEMP/bin" oras
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Publish an unused immutable tag
+        id: publish
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          tag="$(date -u +%y.%m.%d)-$(git rev-parse --short=5 HEAD)"
+          ref="ghcr.io/lepinoid/neuralwatt-exporter:$tag"
+          printf '%s' "$GHCR_TOKEN" | oras login ghcr.io -u "$GHCR_USER" --password-stdin
+          # oras manifest fetch でエラーメッセージが期待する文字列を含まない場合がある
+          # (例: 新しいパッケージの初回 publish 時に "requested access to the resource is denied")。
+          # 「tag が既に存在する」場合のみ拒否し、それ以外の fetch 失敗 (MANIFEST_UNKNOWN
+          # 系を含むあらゆる "存在しない" ケース) は publish に進む。
+          if oras manifest fetch "$ref" > /dev/null 2> "$RUNNER_TEMP/fetch-error"; then
+            echo 'Refusing to overwrite an existing release tag' >&2
+            exit 1
+          fi
+          # fetch が失敗した場合のエラー内容を記録しておく (デバッグ用)
+          cat "$RUNNER_TEMP/fetch-error" >&2
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+          docker build --platform linux/amd64 -f exporters/neuralwatt/Dockerfile -t "$ref" .
+          ci/smoke-neuralwatt-exporter-image.sh "$ref"
+          docker push "$ref"
+          digest=$(oras resolve "$ref")
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "Published: $ref@$digest"
+          echo 'Do not update the Deployment automatically. Pin <tag>@<digest> in neuralwatt-exporter/deployment.yaml in a separate PR.'
