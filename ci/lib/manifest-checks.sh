@@ -127,11 +127,11 @@ image_repository() {
 }
 
 # digest 固定のルール:
-# - MANIFEST_DIGEST_REQUIRED_IMAGES の image は tag@sha256:<64 桁> で固定する
+# - MANIFEST_DIGEST_REQUIRED_IMAGES の image は tag@sha256:<64 桁> で固定する（tag は必須。digest だけは不可）
 # - digest を付けるなら sha256 の完全な値にする
 # - 同じトップレベルディレクトリで digest 固定した同じ repository は、すべて同じ参照にする
 check_digest_pins() {
-  local root=$1 file image repo key status=0
+  local root=$1 file image repo ref_name key status=0
   shift
   local -A first_ref first_file
   while IFS=$'\t' read -r file image; do
@@ -143,6 +143,13 @@ check_digest_pins() {
     fi
     if [[ " $MANIFEST_DIGEST_REQUIRED_IMAGES " == *" $repo "* && $image != *@* ]]; then
       echo "digest: $file: $image must be pinned as <tag>@sha256:<digest>" >&2
+      status=1
+      continue
+    fi
+    # digest だけの参照（tag なし）は、どの版か読めないので受理しない。
+    ref_name=${image%%@*}
+    if [[ " $MANIFEST_DIGEST_REQUIRED_IMAGES " == *" $repo "* && ${ref_name##*/} != *:* ]]; then
+      echo "digest: $file: $image must have a tag (<tag>@sha256:<digest>)" >&2
       status=1
       continue
     fi

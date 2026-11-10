@@ -148,6 +148,7 @@ URL のホストを `127.0.0.1:3080` にしてブラウザで開く。認証は 
     containers:
       - name: c
         image: ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-f434bcb@sha256:e80b6c1ac184849447198fdffe8b10c50a04e28074d4d6f809a20233c6bc67a2
+        imagePullPolicy: Always   # ノードにキャッシュ済みのイメージで成功して、権限の不足を見逃さない
         command: [sleep, "30"]
         securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
         resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {cpu: 100m, memory: 128Mi}}
@@ -157,7 +158,12 @@ URL のホストを `127.0.0.1:3080` にしてブラウザで開く。認証は 
   kubectl -n lepinoid delete pod dsh-agent-pull-check
   ```
 
-- `unauthorized`／`denied` のとき（鍵の保持者の作業）: `ghcr-pull-secret` の token にこのパッケージ（`ghcr.io/lepinoid/dsh-agent`）の読み取り権限がない。token の所有ユーザーに `read:packages` があること、パッケージ `lepinoid/dsh-agent` の Package settings で、そのユーザー（またはリポジトリ `Lepinoid/dsh-agent`）に Read が付いていることを確かめて調整する。token を差し替える場合は `lepinoid/ghcr-pull-secret.sops.yaml` を更新する（ほかの非公開イメージも引くため、権限を減らさない）。
+- `unauthorized`／`denied` のとき（鍵の保持者の作業）: 原因は次の 3 つに分かれる。どれが足りないかを切り分けて調整する（実装者は token の値を使った確認をしていない）。
+  1. token の scope: `ghcr-pull-secret` の token が `read:packages` を持つこと（classic PAT。fine-grained PAT は Packages に対応しない）。
+  2. token 所有ユーザーの package 権限: パッケージ `lepinoid/dsh-agent`（Package settings）で、その token の所有ユーザー（またはそのユーザーを含む Team）に Read が付いていること。
+  3. Actions のリポジトリアクセス: Package settings の「Manage Actions access」は、**GitHub Actions のワークフロー（`GITHUB_TOKEN`）がパッケージを使う**ための設定で、`ghcr-pull-secret` の token（PAT）の権限とは別。クラスタからの pull には効かないので、ここを直しても pull は通らない。公開側の workflow が push できているかとは分けて考える。
+
+  token を差し替える場合は `lepinoid/ghcr-pull-secret.sops.yaml` を更新する（ほかの非公開イメージも引くため、権限を減らさない）。
 
 ## ワールド配布 (lepinoid-dev)
 

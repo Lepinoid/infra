@@ -193,4 +193,13 @@ expect_fail "app/d.yaml: ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-f434bcb must be p
 pod_with_images d "ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-f434bcb@$digest_a" >"$root/app/d.yaml"
 expect_ok check_digest_pins "$root" app/d.yaml
 
+pod_with_images d "ghcr.io/lepinoid/dsh-agent@$digest_a" >"$root/app/d.yaml"
+expect_fail "app/d.yaml: ghcr.io/lepinoid/dsh-agent@$digest_a must have a tag" check_digest_pins "$root" app/d.yaml
+
+pod_with_images d "ghcr.io/lepinoid/plugin-updater@$digest_a" >"$root/app/d.yaml"
+expect_fail "app/d.yaml: ghcr.io/lepinoid/plugin-updater@$digest_a must have a tag" check_digest_pins "$root" app/d.yaml
+
+pod_with_images d "busybox@$digest_a" >"$root/app/d.yaml"
+expect_ok check_digest_pins "$root" app/d.yaml
+
 echo "manifest-checks tests passed"
