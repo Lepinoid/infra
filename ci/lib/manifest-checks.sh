@@ -118,10 +118,12 @@ manifest_images() {
 
 # image 参照から tag と digest を除いた repository を返す。
 image_repository() {
-  local name=${1%%@*}
+  local name=${1%%@*} last
   # ":" が最後の "/" より後ろにあるときだけ tag とみなす（registry のポート番号を残す）。
-  if [[ ${name##*/} == *:* ]]; then
-    name=${name%:*}
+  # 最初の ":" 以降を tag 扱いにする（"repo:a:b" のような不正な参照でも repository を取り違えない）。
+  last=${name##*/}
+  if [[ $last == *:* ]]; then
+    name=${name%"$last"}${last%%:*}
   fi
   printf '%s\n' "$name"
 }
@@ -146,10 +148,13 @@ check_digest_pins() {
       status=1
       continue
     fi
-    # digest だけの参照（tag なし）は、どの版か読めないので受理しない。
+    # tag がない（digest だけ）・空・不正な文字の参照は、どの版か読めないので受理しない。
+    # tag は [A-Za-z0-9_][A-Za-z0-9_.-]{0,127}（OCI の distribution spec）。
     ref_name=${image%%@*}
-    if [[ " $MANIFEST_DIGEST_REQUIRED_IMAGES " == *" $repo "* && ${ref_name##*/} != *:* ]]; then
-      echo "digest: $file: $image must have a tag (<tag>@sha256:<digest>)" >&2
+    ref_name=${ref_name##*/}
+    if [[ " $MANIFEST_DIGEST_REQUIRED_IMAGES " == *" $repo "* ]] &&
+      { [[ $ref_name != *:* ]] || [[ ! ${ref_name#*:} =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; }; then
+      echo "digest: $file: $image must have a valid tag (<tag>@sha256:<digest>)" >&2
       status=1
       continue
     fi

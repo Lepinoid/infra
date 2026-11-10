@@ -194,12 +194,27 @@ pod_with_images d "ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-f434bcb@$digest_a" >"$r
 expect_ok check_digest_pins "$root" app/d.yaml
 
 pod_with_images d "ghcr.io/lepinoid/dsh-agent@$digest_a" >"$root/app/d.yaml"
-expect_fail "app/d.yaml: ghcr.io/lepinoid/dsh-agent@$digest_a must have a tag" check_digest_pins "$root" app/d.yaml
+expect_fail "app/d.yaml: ghcr.io/lepinoid/dsh-agent@$digest_a must have a valid tag" check_digest_pins "$root" app/d.yaml
 
 pod_with_images d "ghcr.io/lepinoid/plugin-updater@$digest_a" >"$root/app/d.yaml"
-expect_fail "app/d.yaml: ghcr.io/lepinoid/plugin-updater@$digest_a must have a tag" check_digest_pins "$root" app/d.yaml
+expect_fail "app/d.yaml: ghcr.io/lepinoid/plugin-updater@$digest_a must have a valid tag" check_digest_pins "$root" app/d.yaml
 
 pod_with_images d "busybox@$digest_a" >"$root/app/d.yaml"
+expect_ok check_digest_pins "$root" app/d.yaml
+
+pod_with_images d "ghcr.io/lepinoid/dsh-agent:@$digest_a" >"$root/app/d.yaml"
+expect_fail "app/d.yaml: ghcr.io/lepinoid/dsh-agent:@$digest_a must have a valid tag" check_digest_pins "$root" app/d.yaml
+
+pod_with_images d "ghcr.io/lepinoid/plugin-updater:@$digest_a" >"$root/app/d.yaml"
+expect_fail "app/d.yaml: ghcr.io/lepinoid/plugin-updater:@$digest_a must have a valid tag" check_digest_pins "$root" app/d.yaml
+
+pod_with_images d "ghcr.io/lepinoid/dsh-agent:-bad@$digest_a" >"$root/app/d.yaml"
+expect_fail "app/d.yaml: ghcr.io/lepinoid/dsh-agent:-bad@$digest_a must have a valid tag" check_digest_pins "$root" app/d.yaml
+
+pod_with_images d "ghcr.io/lepinoid/dsh-agent:a:b@$digest_a" >"$root/app/d.yaml"
+expect_fail "app/d.yaml: ghcr.io/lepinoid/dsh-agent:a:b@$digest_a must have a valid tag" check_digest_pins "$root" app/d.yaml
+
+pod_with_images d "ghcr.io/lepinoid/dsh-agent:v1_2.3-rc@$digest_a" >"$root/app/d.yaml"
 expect_ok check_digest_pins "$root" app/d.yaml
 
 echo "manifest-checks tests passed"
