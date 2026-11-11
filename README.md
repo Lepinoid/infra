@@ -113,6 +113,12 @@ DeepSeek Harness（[`dsh`](https://github.com/deepseek-ai/deepseek-harness) 0.2.
 - サンドボックス: Landlock（restricted 相当の `securityContext` のまま成立する。bwrap は使えない）。
 - モデル: Neuralwatt（`https://api.neuralwatt.com/v1`）の `deepseek-v4.1-flash`。ルートの設定はイメージのシードが持ち、API キーは Secret `dsh-agent-secrets`（キー `NEURALWATT_API_KEY`、`dsh-agent/secrets.sops.yaml`）から環境変数で受ける。このファイルの暗号化は**キーを持つ人が自分で行う**（実装者・エージェントは値を扱わない）。UI からキーを保存しない（`.credentials.yaml` の保存値が環境変数より優先されるため）。キーを替えたら `kubectl -n lepinoid rollout restart statefulset/dsh-agent`。
 - MCP の token: Secret `lepinoid-dev-mcp` のキー `token` を環境変数 `LEPINOID_MCP_TOKEN` で受ける（`optional: true`。Secret がなくても起動する）。
+- MCP の接続（[Lepinoid/infra#83](https://github.com/Lepinoid/infra/issues/83)）: dev 限定の MCP サーバー（runtime の `lepinoid-runtime-pool-0` の `http://lepinoid-runtime-pool-0.lepinoid-runtime-pool:8083/mcp`。Streamable HTTP）へ、dsh の `@deepseek-ai/dsh-mcp-client` の行（`id: mcp-lepinoid`、`serverName: lepinoid`。ツール名は `mcp__lepinoid__<tool>`）で接続する。
+  - 行はイメージのシードが、プロファイル `web` の `cordis.patch.yml` に `- insert:` で持つ（[Lepinoid/dsh-agent#3](https://github.com/Lepinoid/dsh-agent/issues/3)）。**シードは新しい PVC の初回だけ**効くので、既存の PVC（`data-dsh-agent-0`）には、dsh-agent の [`AGENTS.md`](https://github.com/Lepinoid/dsh-agent/blob/main/AGENTS.md) の「既存の PVC へ MCP の接続を足す（一回限り）」の手順で、バックアップと sha256 の照合のうえ 1 回だけ追記する（`kubectl exec`、使えなければユーザー本人が手元で同じコマンドを実行する。同梱の web UI に MCP を登録する画面はない）。
+  - `headers.Authorization` と `disabled` は `!!js` の式で、Pod の環境変数 `LEPINOID_MCP_TOKEN` を読む（token の値はファイルにもログにも出ない）。`disabled: !!js '!process.env.LEPINOID_MCP_TOKEN'` により、token が未設定のときは行そのものが載らず、MCP へ通信しない（`Bearer undefined` を送らない）。
+  - 接続に失敗しても dsh のログには何も出ない。失敗は runtime の監査行（`LEPINOID_MCP call tool=… outcome=…`）、ツールが見えないこと、401 で判定する。dsh は `MCP-Protocol-Version: 2026-07-28` のプローブを先に送り、runtime が 400 で断ると、旧版の `initialize`・`tools/list` に落ちる。
+  - **token の回転**: `!!js` は dsh の起動時に 1 回だけ評価されるので、Secret `lepinoid-dev-mcp` を更新したら、runtime（`lepinoid-runtime-pool-0`）と dsh（`kubectl -n lepinoid rollout restart statefulset/dsh-agent`）の両方の Pod を再起動する。
+  - `@deepseek-ai/dsh-mcp-manager`（`mcp-manager` の行、`${credential:…}` のテンプレート）は dsh の master にだけあり、公開版 0.2.2-rc.1 にはないので使わない（dsh の次のリリースに含まれたときに移る別の変更）。
 - ネットワーク: 外向きは DNS、私設アドレス帯を除く公開の TCP 443、runtime の 8083 だけ。同 namespace などへの egress は base が許可しているので、`dsh-agent/network-policy.yaml` の `CiliumNetworkPolicy`（`egressDeny`）で明示的に拒否する。
 
 ### 使い方
@@ -152,7 +158,7 @@ URL のホストを `127.0.0.1:3080` にしてブラウザで開く。認証は 
     securityContext: {runAsNonRoot: true, runAsUser: 10001, seccompProfile: {type: RuntimeDefault}}
     containers:
       - name: c
-        image: ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-f434bcb@sha256:e80b6c1ac184849447198fdffe8b10c50a04e28074d4d6f809a20233c6bc67a2
+        image: ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-61d9e39@sha256:5f43c99b1aaba60fe745c920a80f5970027e26b96d214d4d2555db89ede0d18e
         imagePullPolicy: Always   # ノードにキャッシュ済みのイメージで成功して、権限の不足を見逃さない
         command: [sleep, "30"]
         securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
