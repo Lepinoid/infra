@@ -1,5 +1,5 @@
 # Neuralwatt の残高・当月の使用量・キーの上限を Prometheus の指標にする exporter（Lepinoid/infra#84）。
-# - Neuralwatt の GET /v1/quota を一定間隔（既定 60 秒）で 1 本だけ呼び、最後に成功した値を /metrics で返す。
+# - Neuralwatt の GET /v1/quota を一定間隔（この配備では 15 分。下の NEURALWATT_POLL_INTERVAL）で 1 本だけ呼び、最後に成功した値を /metrics で返す。
 #   scrape（PodMonitor）とアラートは turtton/infra#195 が扱う。Service は作らない（Prometheus は Pod を直接 scrape する）。
 # - API キーは dsh-agent と同じ Secret dsh-agent-secrets の NEURALWATT_API_KEY だけをファイルとして投影する。
 #   exporter は取得のたびにファイルを読み直すので、キーを替えても再起動は要らない
@@ -49,6 +49,10 @@ spec:
             - {name: NEURALWATT_API_KEY_FILE, value: /var/run/neuralwatt/api-key}
             # 月の予算（USD）。指標 neuralwatt_monthly_budget_usd になり、ダッシュボードとアラートの比率の分母に使う。
             - {name: NEURALWATT_MONTHLY_BUDGET_USD, value: "20"}
+            # /v1/quota を取得する間隔（既定 60 秒、下限 10 秒）。月 20 ドルの予算の残高・費用の確認には 15 分で足りる（ユーザーの判断）。
+            # 取得が失敗すると fetch_success は次の取得（15 分後）まで 0 のままで、429 のバックオフも最短 15 分になる。
+            # 影響とアラートの規則との関係は README の「取得間隔（15 分）の影響」。
+            - {name: NEURALWATT_POLL_INTERVAL, value: 15m}
           ports:
             # PodMonitor が名前 metrics で選ぶ。
             - {name: metrics, containerPort: 8080, protocol: TCP}

@@ -180,7 +180,7 @@ URL のホストを `127.0.0.1:3080` にしてブラウザで開く。認証は 
 
 dsh-agent が使う Neuralwatt の**残高・当月の使用量・キーの上限**を Prometheus の指標にし、Grafana のダッシュボード「Neuralwatt」（`grafana.lepinoid.net`、uid `neuralwatt`）で見られるようにする（[Lepinoid/infra#84](https://github.com/Lepinoid/infra/issues/84)）。月 20 ドル程度の予算（段階 2 の停止線: 累計 10 ドルで見直し、16 ドルで任意項目を止める）を、Neuralwatt のポータルを開かずに確認するためのもの。
 
-- コード: [`exporters/neuralwatt/`](exporters/neuralwatt)（Go。依存は `prometheus/client_golang`）。`GET https://api.neuralwatt.com/v1/quota` をバックグラウンドで 1 本だけ、`NEURALWATT_POLL_INTERVAL`（既定 60 秒、下限 10 秒）ごとに呼び、最後に成功した値を `/metrics` で返す（scrape では API を呼ばない）。**取得に失敗したときは値を 0 にせず**、直前の成功の値を残し、`neuralwatt_exporter_fetch_success 0` と `neuralwatt_exporter_fetches_total{result=…}` で失敗を表す。一度も成功していなければデータ系列は出ない。値が `null` の系列（サブスクリプションなし、キーの上限なしなど）も出さない。
+- コード: [`exporters/neuralwatt/`](exporters/neuralwatt)（Go。依存は `prometheus/client_golang`）。`GET https://api.neuralwatt.com/v1/quota` をバックグラウンドで 1 本だけ、`NEURALWATT_POLL_INTERVAL`（既定 60 秒、下限 10 秒。この配備では `neuralwatt-exporter/deployment.yaml` で **15 分**）ごとに呼び、最後に成功した値を `/metrics` で返す（scrape では API を呼ばない）。**取得に失敗したときは値を 0 にせず**、直前の成功の値を残し、`neuralwatt_exporter_fetch_success 0` と `neuralwatt_exporter_fetches_total{result=…}` で失敗を表す。一度も成功していなければデータ系列は出ない。値が `null` の系列（サブスクリプションなし、キーの上限なしなど）も出さない。
 - 配備: `neuralwatt-exporter/deployment.yaml`（1 レプリカ。Service なし）。Pod のラベル `app.kubernetes.io/name: neuralwatt-exporter`、コンテナポート 8080（名前 `metrics`）、パス `/metrics`。`neuralwatt-exporter/network-policy.yaml` で外向きを DNS と公開の TCP 443 だけにする（形は dsh-agent と同じ。ingress は変更せず、base の許可で Prometheus が scrape できる）。
 - API キー: dsh-agent と**同じ** Secret `dsh-agent-secrets` のキー `NEURALWATT_API_KEY` だけを、読み取り専用のファイル（`/var/run/neuralwatt/api-key`）として投影する。実装者・エージェントはキーの値を扱わない。ログ・`/metrics`・エラー文にキーは出ない（テストで検査している）。
 - scrape とアラート（PodMonitor・PrometheusRule）は、`lepinoid-deployer` に `monitoring.coreos.com` の権限がないため [turtton/infra#195](https://github.com/turtton/infra/issues/195) で扱う。それが着地するまで、ダッシュボードは Prometheus にデータがなく空になる。
@@ -230,6 +230,20 @@ kubectl get --raw /api/v1/namespaces/lepinoid/pods/$pod:8080/proxy/metrics | gre
 4. マージ後、`kubectl -n lepinoid get deploy,pods -l app.kubernetes.io/name=neuralwatt-exporter` で 1/1 Ready・再起動 0 を確かめ、上の「確認方法」で `neuralwatt_exporter_fetch_success 1` を確認する。
 
 初回の公開（2026-11-10）: `ghcr.io/lepinoid/neuralwatt-exporter:26.11.10-39702@sha256:85683c794be3d0d0d329cdf79029bc65bf52a22522a95c4fff4671a9df449558`（[run 42830419610](https://github.com/Lepinoid/infra/actions/runs/42830419610)）。**新しい GHCR パッケージの初回 publish は `requested access to the resource is denied` になることがある**（パッケージとリポジトリの関連付け・可視性は人の作業）。パッケージは作成直後は private で、リポジトリ `Lepinoid/infra` に関連付けられている。Pod が `ImagePullBackOff` で `unauthorized`／`denied` になるときは、[`ghcr-pull-secret` がパッケージを読めるか](#ghcr-pull-secret-がパッケージを読めるか)の切り分けに従い、`ghcr-pull-secret` の token の所有ユーザーにパッケージ `lepinoid/neuralwatt-exporter` の Read を付けるか、パッケージを公開にする（イメージに秘密はなく、リポジトリも公開）。
+
+### 取得間隔（15 分）の影響
+
+この配備は `NEURALWATT_POLL_INTERVAL=15m` で、Prometheus の scrape（60 秒）とは独立に、15 分に 1 回だけ `/v1/quota` を取得する。値（残高・費用）は 15 分ごとにしか更新されない（`neuralwatt_quota_snapshot_timestamp_seconds` と `neuralwatt_exporter_last_success_timestamp_seconds` が、最後の成功の時刻を示す）。
+
+- **失敗の検知が遅れる**: 取得が失敗すると、`neuralwatt_exporter_fetch_success` は次の取得（15 分後）まで 0 のまま。1 回の失敗では約 15 分、2 回連続で約 30 分 0 のままになる。**`NeuralwattQuotaFetchFailing` は `for: 40m`**（turtton/infra#199）で、1 回・2 回の失敗では発火せず、**3 回連続の失敗（約 45 分。最小で約 42 分 50 秒）で発火する**。障害が起きてから発火するまでは、障害のあとの最初の取得までの待ち（最大 15 分）を含めて**およそ 40〜55 分に、scrape・評価の遅延を足した時間**。
+  - 旧設定の説明（`for: 15m` のとき）: 一度だけの一時的な失敗（`network_error` は 22 時間に 4 回あった）でも、`fetch_success` が 15 分間 0 のままなので `for: 15m` に届いて発火しえた。#199 で `for` を取得間隔より長くして、単発の失敗では発火しないようにした。
+- **費用の急増の検知が遅れる**: `NeuralwattCostBurnRateHigh`（1 時間に 2 ドル超）は、費用の値が 15 分ごとの階段状にしか更新されないので、実際の急増から最大で 15 分遅れて検知する。アラートの式は `max_over_time(increase(…[1h])[15m:1m]) > 2`（1 時間の増加の**直近 15 分間の最大**。1 時間の窓に入る更新は通常 4 回だが、15 分に約 1 分だけ 3 回になって増加が 3/4 に落ちるため、その谷で解消・再発火を繰り返さないようにしている）。**ダッシュボードの「1 時間あたりの費用」は生の `increase(…[1h])` なので、アラートの判定値と一時的に一致しないことがある**（アラートは直近 15 分の最大を使う）。**アラートの解消も最大で約 15 分遅れる**。残高・予算の消化率・キーの上限のアラートも同様に、検知が最大 15 分遅れる。
+- **`402`（`payment_required`）の検知**: `NeuralwattKeyBlocked` の窓は `increase(neuralwatt_exporter_fetches_total{result="payment_required"}[35m]) > 0`（取得間隔の 2 倍 + 5 分。turtton/infra#199）。`402` は取得（15 分）のたびに 1 ずつ増えるので、`402` が続く間は途切れず発火し、間の取得が 1 回別のエラーで抜けても解消しない。
+  - 旧設定の説明（窓が `[10m]` のとき）: 窓が取得間隔（15 分）より短く、`402` が続く間でも、15 分ごとに「10 分発火 → 5 分解消」を繰り返しえた。#199 で窓を取得間隔より長くした。
+- **`429` のバックオフ**: `Retry-After` があればそれに従う（15 分より短ければ 15 分、長ければその時間）。なければ指数バックオフ（上限 10 分）だが、**取得間隔（15 分）を下回らない**ので、実質 15 分ごと（間隔を延ばさない）。1 秒 1 リクエストの制限には、15 分間隔では触れない。
+- **影響しないもの**: `NeuralwattQuotaStale`（最後の成功から 6 時間）は、15 分間隔でも 6 時間より十分短いので、影響しない（一度も成功していない場合の起動時刻からの 6 時間の猶予も同じ）。`NeuralwattExporterDown`・`NeuralwattExporterAbsent` は scrape の `up` なので、取得間隔に依存しない。
+- **ダッシュボード**: 「最後の成功からの経過」は正常でも 0〜15 分になるので、色の閾値を橙 30 分・赤 60 分にした。
+- **キーの回転**は再起動不要のまま。ただし、新しいキーでの取得は次の取得（最大 15 分後）になる。すぐに確かめたいときは Pod を再起動する（起動時に 1 回取得する）。
 
 ### キーの回転・`402` が出たとき
 

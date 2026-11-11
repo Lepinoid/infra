@@ -321,7 +321,7 @@ data:
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "description": "現在時刻 − neuralwatt_exporter_last_success_timestamp_seconds。一度も成功していない（値が 0）ときは出さない。",
+          "description": "現在時刻 − neuralwatt_exporter_last_success_timestamp_seconds。一度も成功していない（値が 0）ときは出さない。取得は 15 分に 1 回なので、正常でも 0〜15 分になる（橙は 30 分、赤は 60 分）。",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -336,7 +336,7 @@ data:
                   },
                   {
                     "color": "orange",
-                    "value": 600
+                    "value": 1800
                   },
                   {
                     "color": "red",
@@ -623,7 +623,7 @@ data:
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "description": "increase(当月の費用[1h])。暴走の目安（1 時間 2 ドル超でアラート）。",
+          "description": "increase(当月の費用[1h])。暴走の目安（1 時間 2 ドル超でアラート）。ここに表示するのは生の increase[1h] で、アラートは取得間隔（15 分）の階段状の値に合わせて、その 15 分間の最大（max_over_time(increase[1h])[15m:1m]）を使うので、一時的に一致しないことがある。アラートの解消も最大で約 15 分遅れることがある。",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1604,7 +1604,7 @@ data:
           },
           "id": 28,
           "options": {
-            "content": "**daily free energy（無料枠の当日の残量）は公開 API がなく、このダッシュボードには出ません。ポータルで見てください。**\n\n残高・費用・キーの上限は Neuralwatt の `GET /v1/quota` を exporter が 1 分ごとに取得した値です。",
+            "content": "**daily free energy（無料枠の当日の残量）は公開 API がなく、このダッシュボードには出ません。ポータルで見てください。**\n\n残高・費用・キーの上限は Neuralwatt の `GET /v1/quota` を exporter が 15 分ごとに取得した値です（取得間隔は Deployment の NEURALWATT_POLL_INTERVAL）。",
             "mode": "markdown"
           },
           "title": "daily free energy について",
