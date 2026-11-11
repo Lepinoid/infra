@@ -623,7 +623,7 @@ data:
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "description": "increase(当月の費用[1h])。暴走の目安（1 時間 2 ドル超でアラート）。",
+          "description": "increase(当月の費用[1h])。暴走の目安（1 時間 2 ドル超でアラート）。ここに表示するのは生の increase[1h] で、アラートは取得間隔（15 分）の階段状の値に合わせて、その 15 分間の最大（max_over_time(increase[1h])[15m:1m]）を使うので、一時的に一致しないことがある。アラートの解消も最大で約 15 分遅れることがある。",
           "fieldConfig": {
             "defaults": {
               "color": {

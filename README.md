@@ -235,9 +235,11 @@ kubectl get --raw /api/v1/namespaces/lepinoid/pods/$pod:8080/proxy/metrics | gre
 
 この配備は `NEURALWATT_POLL_INTERVAL=15m` で、Prometheus の scrape（60 秒）とは独立に、15 分に 1 回だけ `/v1/quota` を取得する。値（残高・費用）は 15 分ごとにしか更新されない（`neuralwatt_quota_snapshot_timestamp_seconds` と `neuralwatt_exporter_last_success_timestamp_seconds` が、最後の成功の時刻を示す）。
 
-- **失敗の検知が遅れる**: 取得が失敗すると、`neuralwatt_exporter_fetch_success` は次の取得（15 分後）まで 0 のまま。`NeuralwattQuotaFetchFailing`（`fetch_success == 0` が 15 分）は、失敗から最大で約 15 分遅れて pending になり、`for: 15m` と合わせて**最大で約 30 分**かかって発火する。**一度だけの一時的な失敗（`network_error` は 22 時間に 4 回あった）でも、次の取得までの 15 分間 `fetch_success` が 0 のままなので、`for: 15m` に届いて発火しうる**（規則は turtton/infra の `monitoring-config/neuralwatt-rules.yaml`。間隔を 15 分にしたまま誤報を避けるには、`for` を取得間隔より長く（30 分以上）する）。
-- **費用の急増の検知が遅れる**: `NeuralwattCostBurnRateHigh`（1 時間に 2 ドル超）は、費用の値が 15 分ごとにしか更新されないので、実際の急増から最大で 15 分遅れて検知する（1 時間の窓には 15 分ごとの値が 4 点入るので、評価はできる）。残高・予算の消化率・キーの上限のアラートも同様に、最大 15 分遅れる。
-- **`402`（`payment_required`）の検知**: `NeuralwattKeyBlocked` の `increase(neuralwatt_exporter_fetches_total{result="payment_required"}[10m]) > 0` は、窓（10 分）が取得間隔（15 分）より短いので、`402` が続く間、15 分ごとに「10 分発火 → 5 分解消」を繰り返しうる（窓を取得間隔より長く（30 分以上）する）。
+- **失敗の検知が遅れる**: 取得が失敗すると、`neuralwatt_exporter_fetch_success` は次の取得（15 分後）まで 0 のまま。1 回の失敗では約 15 分、2 回連続で約 30 分 0 のままになる。**`NeuralwattQuotaFetchFailing` は `for: 40m`**（turtton/infra#199）で、1 回・2 回の失敗では発火せず、**3 回連続の失敗（約 45 分。最小で約 42 分 50 秒）で発火する**。障害が起きてから発火するまでは、障害のあとの最初の取得までの待ち（最大 15 分）を含めて**およそ 40〜55 分に、scrape・評価の遅延を足した時間**。
+  - 旧設定の説明（`for: 15m` のとき）: 一度だけの一時的な失敗（`network_error` は 22 時間に 4 回あった）でも、`fetch_success` が 15 分間 0 のままなので `for: 15m` に届いて発火しえた。#199 で `for` を取得間隔より長くして、単発の失敗では発火しないようにした。
+- **費用の急増の検知が遅れる**: `NeuralwattCostBurnRateHigh`（1 時間に 2 ドル超）は、費用の値が 15 分ごとの階段状にしか更新されないので、実際の急増から最大で 15 分遅れて検知する。アラートの式は `max_over_time(increase(…[1h])[15m:1m]) > 2`（1 時間の増加の**直近 15 分間の最大**。1 時間の窓に入る更新は通常 4 回だが、15 分に約 1 分だけ 3 回になって増加が 3/4 に落ちるため、その谷で解消・再発火を繰り返さないようにしている）。**ダッシュボードの「1 時間あたりの費用」は生の `increase(…[1h])` なので、アラートの判定値と一時的に一致しないことがある**（アラートは直近 15 分の最大を使う）。**アラートの解消も最大で約 15 分遅れる**。残高・予算の消化率・キーの上限のアラートも同様に、検知が最大 15 分遅れる。
+- **`402`（`payment_required`）の検知**: `NeuralwattKeyBlocked` の窓は `increase(neuralwatt_exporter_fetches_total{result="payment_required"}[35m]) > 0`（取得間隔の 2 倍 + 5 分。turtton/infra#199）。`402` は取得（15 分）のたびに 1 ずつ増えるので、`402` が続く間は途切れず発火し、間の取得が 1 回別のエラーで抜けても解消しない。
+  - 旧設定の説明（窓が `[10m]` のとき）: 窓が取得間隔（15 分）より短く、`402` が続く間でも、15 分ごとに「10 分発火 → 5 分解消」を繰り返しえた。#199 で窓を取得間隔より長くした。
 - **`429` のバックオフ**: `Retry-After` があればそれに従う（15 分より短ければ 15 分、長ければその時間）。なければ指数バックオフ（上限 10 分）だが、**取得間隔（15 分）を下回らない**ので、実質 15 分ごと（間隔を延ばさない）。1 秒 1 リクエストの制限には、15 分間隔では触れない。
 - **影響しないもの**: `NeuralwattQuotaStale`（最後の成功から 6 時間）は、15 分間隔でも 6 時間より十分短いので、影響しない（一度も成功していない場合の起動時刻からの 6 時間の猶予も同じ）。`NeuralwattExporterDown`・`NeuralwattExporterAbsent` は scrape の `up` なので、取得間隔に依存しない。
 - **ダッシュボード**: 「最後の成功からの経過」は正常でも 0〜15 分になるので、色の閾値を橙 30 分・赤 60 分にした。
