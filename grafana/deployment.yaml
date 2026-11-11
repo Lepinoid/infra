@@ -4,6 +4,18 @@ metadata:
   name: grafana
 spec:
   replicas: 1
+  # PVC（grafana-data）は ReadWriteOnce で、replicas は 1。既定の RollingUpdate（maxSurge 25%・maxUnavailable 25%）は、
+  # 1 レプリカでは「新しい Pod を先に作り、Ready になってから旧 Pod を止める」になる。新しい Pod が別ノードに置かれると、
+  # 旧 Pod が PVC を持ったままなので Multi-Attach error で起動できず、旧 Pod も止まらないデッドロックになる（#85 の volume の変更で発生した）。
+  # maxSurge: 0・maxUnavailable: 1 にして、旧 RS を先に縮退させ、新 Pod の Ready を待たずに旧 Pod の終了を進める
+  # （旧 Pod の完全な終了より前に新 Pod が作られて並存することはありうるが、旧 Pod は新 Pod の Ready を待たずに止まるので、
+  # デッドロックしない。type は RollingUpdate のまま。
+  # Recreate にすると、既存の Deployment が持つ rollingUpdate の既定値が残ってサーバーサイド apply の dry-run が失敗する。#87）。
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: grafana
