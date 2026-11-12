@@ -150,6 +150,14 @@ spec:
             # MCP 専用の token。forwarding-secret・transfer-secret とは別の値にする（runtime が同値を拒否する）。
             - name: LEPINOID_MCP_TOKEN
               valueFrom: {secretKeyRef: {name: lepinoid-dev-mcp, key: token}}
+            # エージェント bridge（/agent/*。MCP と同じ 8083 の別パス）専用の token（Lepinoid/lepinoid#840、Lepinoid/infra#93）。
+            # LEPINOID_MCP_TOKEN・forwarding-secret・transfer-secret とは別の値にする（runtime が同値を拒否する）。
+            # optional にしない: 許可リストのファイルを指定して token がないと runtime は起動を拒否する（片方だけ有効になる状態を作らない）。
+            - name: LEPINOID_AGENT_BRIDGE_TOKEN
+              valueFrom: {secretKeyRef: {name: lepinoid-agent-bridge, key: token}}
+            # 許可リスト（World UI の操作を許す Minecraft の UUID の JSON 配列。空配列でもよい）。起動時に 1 回だけ読む。
+            # 二重管理の正はこの Secret 1 つ。のちの bridge（dsh-agent）も同じ Secret を読む。
+            - {name: LEPINOID_AGENT_ALLOWLIST_FILE, value: /run/agent-allowlist/allowlist.json}
             - name: POSTGRES_DB
               valueFrom: {secretKeyRef: {name: lepinoid-db-credentials, key: POSTGRES_DB}}
             - {name: LEPINOID_JDBC_URL, value: "jdbc:postgresql://lepinoid-runtime-db:5432/$(POSTGRES_DB)"}
@@ -199,6 +207,7 @@ spec:
             - {name: selected-presence-credentials, mountPath: /run/presence, readOnly: true}
             - {name: crafting-key, mountPath: /run/crafting, readOnly: true}
             - {name: spawn-config, mountPath: /run/spawn-config, readOnly: true}
+            - {name: agent-allowlist, mountPath: /run/agent-allowlist, readOnly: true}
       volumes:
         - {name: worlds, emptyDir: {}}
         - {name: scratch, emptyDir: {}}
@@ -234,6 +243,11 @@ spec:
             secretName: lepinoid-spawn-config
             defaultMode: 0440
             items: [{key: spawnconfig.json, path: spawnconfig.json}]
+        - name: agent-allowlist
+          secret:
+            secretName: lepinoid-agent-allowlist
+            defaultMode: 0440
+            items: [{key: allowlist.json, path: allowlist.json}]
   volumeClaimTemplates:
     - metadata:
         name: world-edits

@@ -105,6 +105,22 @@ runtime の設定 revision ストア（weapon-tuning 画面の「確定」など
 - 未配備のもの: `LEPINOID_SERVER_CONFIG_PATH`（`naturalSpawn` の allowlist）は設定しないので、自然湧きは無効のままで、採取の高品質率も設定されない。
 - この設定を有効にするには、runtime image が Lepinoid/lepinoid#775（起動時のスキーマ作成と初期 revision 作成）を含む版であること。含まない版では、スキーマがないため weapon-tuning の確定が「基点を読み込めません」で止まる。
 
+### エージェント bridge の口 (/agent/*)
+
+dsh-agent の bridge が World UI へスナップショットを送り、入力を取りに来る口（[Lepinoid/lepinoid#840](https://github.com/Lepinoid/lepinoid/issues/840) の `POST /agent/snapshot`・`POST /agent/inbox`。契約は lepinoid の `runtime/docs/agent-bridge.md`）。dev 限定。配備は [Lepinoid/infra#93](https://github.com/Lepinoid/infra/issues/93)。
+
+- 口: runtime の MCP と**同じ 8083**（別パス `/agent/*`・別 token）。したがって NetworkPolicy は変えない。`lepinoid/network-policy.yaml` の CiliumNetworkPolicy `lepinoid-pool-runtime-mcp-deny` が、8083 への ingress を dsh-agent（`app.kubernetes.io/name: lepinoid-dev-agent`）以外から拒否するので、`/agent/*` も dsh-agent だけが届く。`/mcp` の token と `/agent/*` の token は互いに 401。
+- Secret（どちらも SOPS。**キーの保持者が暗号化する**。実装者・エージェントは値を扱わない）:
+  - `lepinoid/agent-bridge.sops.yaml`: Secret `lepinoid-agent-bridge`、キー `token`。32〜128 文字の見える ASCII。`lepinoid-dev-mcp` の token・`lepinoid-runtime-secrets` の `forwarding-secret`・`transfer-secret` と**異なる値**にする（runtime が同値を拒否する）。環境変数 `LEPINOID_AGENT_BRIDGE_TOKEN` で runtime に渡す（`optional` にしない）。
+  - `lepinoid/agent-allowlist.sops.yaml`: Secret `lepinoid-agent-allowlist`、キー `allowlist.json`。World UI の操作を許す Minecraft の UUID（小文字・ハイフンつき。64 件まで）の JSON 配列。空配列 `[]` は「誰も許可しない」。runtime コンテナに `/run/agent-allowlist/allowlist.json` として読み取り専用で mount し（`defaultMode: 0440`）、環境変数 `LEPINOID_AGENT_ALLOWLIST_FILE` で指す。hermes-lepi の許可ユーザー（Discord の ID）や `Lepinoid/OperatorInfo` の `operators.yml` とは別物。
+  - **許可リストの二重管理の正はこの Secret 1 つ**。のちの bridge（dsh-agent。E7）も同じ Secret を読む（コピーを別々に持たない）。dsh-agent の StatefulSet は、この issue では変えない（使われない token を環境変数に先に置かない）。
+- Secret は `optional` にしない。runtime は、許可リストのファイルを指定して token がないと起動を拒否する。Secret が欠けると Pod は `CreateContainerConfigError`／mount 失敗で上がらないので、2 つの Secret を先に置く。
+- 起動の確認: `kubectl -n lepinoid logs lepinoid-runtime-pool-0 | grep 'LEPINOID_AGENT allowlist'` に `LEPINOID_AGENT allowlist count=<n> sha256=<hex>` が 1 行ある。`sha256` は、小文字化して整列した UUID を `\n` で連結（末尾の改行なし。空の一覧は空文字列）した SHA-256 で、`/agent/inbox` の応答の `allowlistSha256` と同じ。UUID・token はログに出ない。
+- **token の回転**: Secret `lepinoid-agent-bridge` を更新し、runtime の Pod を再起動する（`kubectl -n lepinoid rollout restart statefulset/lepinoid-runtime-pool`。環境変数は起動時に 1 回だけ読む）。bridge の token を dsh-agent へ注入する変更（E7）が入ったあとは、dsh-agent も再起動する（`kubectl -n lepinoid rollout restart statefulset/dsh-agent`）。
+- **許可リストの更新**: Secret `lepinoid-agent-allowlist` を更新して runtime の Pod を再起動する（起動時に 1 回だけ読む）。起動ログの `sha256` を控え、のちの bridge が同じ Secret から求めた値と照合する（不一致のあいだ bridge は入力を受けない）。
+- **pool-0 固定の制約**: bridge の宛先は `lepinoid-runtime-pool-0` 固定（MCP と同じ）。runtime の pool は 1〜3 台で各台がメモリ上の World UI・ストアを持つので、スナップショットが届くのは pool-0 だけで、他の台にいるプレイヤーには見えない。スナップショットは永続化せず、runtime の再起動で空に戻る。
+- この変更は、口を持たない旧 image でも環境変数が無視されるだけで害がない。起動ログの確認以降は、口を含む runtime image（Lepinoid/lepinoid#840）が要る。
+
 ## dsh-agent (lepinoid-dev-agent)
 
 DeepSeek Harness（[`dsh`](https://github.com/deepseek-ai/deepseek-harness) 0.2.2-rc.1、web profile）を常駐させる専用 Pod の PoC（[Lepinoid/infra#79](https://github.com/Lepinoid/infra/issues/79)）。イメージ `ghcr.io/lepinoid/dsh-agent`（非公開）は [Lepinoid/dsh-agent](https://github.com/Lepinoid/dsh-agent) が作る。
