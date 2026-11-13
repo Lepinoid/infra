@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: lepinoid-agent-bridge
+type: Opaque
+stringData:
+    token: ENC[AES256_GCM,data:r1QwAZBauAupUrREP2tMnZTD1fTTTWWImpvLv1Gd+DHe1/isl6Fq6piyZ90xA24eYEwz53KTPIAKunPswVbn7g==,iv:Lsi0gFEPjBkmBJhcUhQaAfdsnMSvcmnAB+/WoYOh16E=,tag:VQ5j/9w3Tx1ljHHuLV7EiA==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAyaXRWOWZFbXN4SHVjbWEx
+            RndPaFZQdU05dlVmU3dHaXN4WmZUQ0JMUUZBCi80dkQ1N1MxYTFWNkxja2FXZHlt
+            eFVpTHB3SVE2Q2JnMjRnckEvaHFRdFkKLS0tIHdVcmlqVUJKbHhLLzlQWkhmYXFV
+            bkVkS3RzMjM2NDN0ZUh2ajVIbnVxMU0K/HZLWCJRhKvFXQkrKVASjais/vcw6gQP
+            qL3pC4YB9Cj/STQ/V7s5Kd1F5odsbDA+1eGoeFCixM1zMnkNfYqgkQ==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age10p7f8sn3v2r0973s8q4664sgxh4hpt8c0tp3w83w8m0zu5rkfccqge8atx
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-11-13T15:55:36Z"
+    mac: ENC[AES256_GCM,data:cl8BBWjgEp92xnssyYDW3x9ISY/z42c9tszdMMelrK8n5POArC+reubkv+s9J2IriA0KgRngS0Nfnu/G7XJOX3fXHc5rnmiJKhXTHKX7YVAc1j1uOgvN9k0DJIbnLT59fSS4KBZ4Jqidi/cutC5Dh3kEDwwyTFQp1euuLQsP418=,iv:+NqQr7FGIRSr5sbOGkXEpEV+L8M66uEJvP6lE9WT/U0=,tag:NXpwLaoRIkS/9ztc4dPnNA==,type:str]
+    version: 3.13.3

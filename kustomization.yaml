@@ -29,7 +29,6 @@ resources:
   - lepinoid/spawn-config.sops.yaml
   - lepinoid/dev-mcp.sops.yaml
   - lepinoid/agent-bridge.sops.yaml
-  - lepinoid/agent-allowlist.sops.yaml
   - lepinoid/db-pvc.yaml
   - lepinoid/db-deployment.yaml
   - lepinoid/db-service.yaml
