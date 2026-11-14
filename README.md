@@ -131,6 +131,11 @@ DeepSeek Harness（[`dsh`](https://github.com/deepseek-ai/deepseek-harness) 0.2.
   - 接続に失敗しても dsh のログには何も出ない。失敗は runtime の監査行（`LEPINOID_MCP call tool=… outcome=…`）、ツールが見えないこと、401 で判定する。dsh は `MCP-Protocol-Version: 2026-07-28` のプローブを先に送り、runtime が 400 で断ると、旧版の `initialize`・`tools/list` に落ちる。
   - **token の回転**: `!!js` は dsh の起動時に 1 回だけ評価されるので、Secret `lepinoid-dev-mcp` を更新したら、runtime（`lepinoid-runtime-pool-0`）と dsh（`kubectl -n lepinoid rollout restart statefulset/dsh-agent`）の両方の Pod を再起動する。
   - `@deepseek-ai/dsh-mcp-manager`（`mcp-manager` の行、`${credential:…}` のテンプレート）は dsh の master にだけあり、公開版 0.2.2-rc.1 にはないので使わない（dsh の次のリリースに含まれたときに移る別の変更）。
+- Auto（auto-review。[Lepinoid/infra#95](https://github.com/Lepinoid/infra/issues/95)・[Lepinoid/dsh-agent#8](https://github.com/Lepinoid/dsh-agent/issues/8)）: dsh 0.2.2-rc.1 に同梱の `@deepseek-ai/dsh-experimental-auto-review` を、プロファイル `web` の `cordis.patch.yml` の `- insert:` の行（`id: auto-review`）で有効にする。イメージ `0.2.2-rc.1-720467c` 以降は、面のセッション（新規・復元のトップレベル）を Auto＋承認ポリシー `never` に自動で固定する（`auto-pin`。イメージ所有）。
+  - **行は既存の PVC には自動では入らない**（シードは新しい PVC の初回だけ）。dsh-agent の [`AGENTS.md`](https://github.com/Lepinoid/dsh-agent/blob/main/AGENTS.md) の「既存の PVC へ auto-review の行を足す（一回限り）」の手順で、バックアップと sha256 の照合のうえ 1 回だけ追記し、`kubectl -n lepinoid rollout restart statefulset/dsh-agent` で反映する。**順序は、行の追記が先、イメージの更新（マージ）があと**。auto-pin のイメージで行がないと、fail closed で新規セッションが作れず、既存のセッション（`danger-full-access` を明示したものを除く）への prompt も拒否される。追記が終わるまで、dsh の画面から設定を保存しない（保存先は同じ `cordis.patch.yml`）。
+  - **Auto は Full access（sandbox なし）で動き、すべてのツール呼び出しを同じモデル（Neuralwatt の `deepseek-v4.1-flash`）が事前に審査する。審査モデルは独立していない。** したがって Auto のセッションの `bash` からは `/proc/1/environ`・`$DSH_HOME/.credentials.yaml`（cookie の署名鍵）が読める前提で運用する（段階 3 の決定 16 で受容。プロセスは分けない）。`run_code`（PTC）が直接行う Node の副作用は審査されない（残余。記録のみ）。
+  - 秘密が漏れたときに備える運用: キーの上限は Neuralwatt のキーごとの allowance（`neuralwatt_key_allowance_*`・`neuralwatt_credits_remaining_usd`。後述「キーの回転・`402` が出たとき」）。`NEURALWATT_API_KEY`・`LEPINOID_MCP_TOKEN` の回転は上の各項目（Secret を更新して `rollout restart`）。「秘密の到達性（実測）」も参照。
+  - 稼働中に auto-review が unload されると、dsh はそのプロセスの Auto のセッションをすべて審査なしの Full access（`never`）へ移す（防げない）。**実 Pod の dsh では unload を試さない**。復旧は、先に auto-review を読み込ませる（`rollout restart`）→ 全セッションを Web の権限選択で Auto に戻す。検知の手段と仕様は dsh-agent の README「Auto（auto-review）と自動固定」を正とする。
 - ネットワーク: 外向きは DNS、私設アドレス帯を除く公開の TCP 443、runtime の 8083 だけ。同 namespace などへの egress は base が許可しているので、`dsh-agent/network-policy.yaml` の `CiliumNetworkPolicy`（`egressDeny`）で明示的に拒否する。
 
 ### 使い方
@@ -183,7 +188,7 @@ head -c 1 -- /proc/1/environ >/dev/null 2>&1 && names < /proc/1/environ
 ### イメージの更新
 
 1. [Lepinoid/dsh-agent](https://github.com/Lepinoid/dsh-agent) の CI が公開した `<dsh の版>-<コミット SHA7>` のタグと digest を確かめる。
-2. `dsh-agent/statefulset.yaml` の `image` を `ghcr.io/lepinoid/dsh-agent:<tag>@sha256:<digest>` に書き換える PR を出す（tag だけの参照は `ci/check-manifests.sh` が拒否する）。
+2. `dsh-agent/statefulset.yaml` の `image` を `ghcr.io/lepinoid/dsh-agent:<tag>@sha256:<digest>` に書き換える PR を出す（tag だけの参照は `ci/check-manifests.sh` が拒否する）。イメージが前提とする PVC の変更（例: auto-review の行。上の「Auto」）があれば、**マージの前に**済ませる（Flux はマージ後に適用する）。
 3. マージ後、StatefulSet が RollingUpdate で Pod を作り直す。PVC は残り、セッションと cookie の署名鍵も保持される。
 
 ### `ghcr-pull-secret` がパッケージを読めるか
@@ -206,7 +211,7 @@ head -c 1 -- /proc/1/environ >/dev/null 2>&1 && names < /proc/1/environ
     securityContext: {runAsNonRoot: true, runAsUser: 10001, seccompProfile: {type: RuntimeDefault}}
     containers:
       - name: c
-        image: ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-61d9e39@sha256:5f43c99b1aaba60fe745c920a80f5970027e26b96d214d4d2555db89ede0d18e
+        image: ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-720467c@sha256:b809c262ea229e5d6c06571230c176b3070366c7f16a9068d31f1a2618d6d08f
         imagePullPolicy: Always   # ノードにキャッシュ済みのイメージで成功して、権限の不足を見逃さない
         command: [sleep, "30"]
         securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
