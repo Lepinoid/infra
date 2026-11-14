@@ -79,6 +79,7 @@ kustomization.yaml          ← 全リソースのエントリポイント
 │   └── Cloudflare Access auth proxy (Cf-Access-Authenticated-User-Email ヘッダー)
 ├── lepinoid/               ← dev server (Velocity + Minestom runtime pool, PostgreSQL, NATS, ワールド配布)
 │   └── dev 限定の MCP (runtime のポート 8083): token は専用 Secret `lepinoid-dev-mcp`、到達元は CiliumNetworkPolicy の ingressDeny でエージェント Pod (`lepinoid-dev-agent`) 以外を拒否（標準 NetworkPolicy の許可は加算されるため）
+│   └── エージェント bridge の口 (同じ 8083 の `/agent/*`): token は Secret `lepinoid-agent-bridge` (`LEPINOID_AGENT_BRIDGE_TOKEN`)、許可する人は `Lepinoid/OperatorInfo` の `operators.yml` が正本で、runtime が既存の operator 認可（ロール）で判定する（許可するロールは環境変数 `LEPINOID_AGENT_ROLES=owner,developer,builder`。許可リストの Secret・mount は持たない）。NetworkPolicy は MCP と共通で変えない。bridge の宛先は pool-0 固定。token の回転は Secret を直して runtime を再起動（README「エージェント bridge の口」）
 ├── neuralwatt-exporter/    ← Neuralwatt の残高・使用量・キーの上限の Prometheus exporter (ghcr.io/lepinoid/neuralwatt-exporter、コードは exporters/neuralwatt/)。Service なし・Secret `dsh-agent-secrets` の API キー 1 キーだけをファイルで投影。外向きは標準 NetworkPolicy の許可と CiliumNetworkPolicy の egressDeny で絞る。scrape・アラートは turtton/infra 側 (PodMonitor・PrometheusRule)。ダッシュボードは grafana/dashboard-neuralwatt.yaml
 ├── dsh-agent/              ← dev 調整用の LLM エージェント dsh の専用 Pod (StatefulSet + PVC)。公開しない（port-forward で使う）。外向きは標準 NetworkPolicy の許可と CiliumNetworkPolicy の egressDeny で絞る。Secret `dsh-agent-secrets` はキーの保持者が暗号化する
 └── build-server/           ← ビルドサーバー (PaperMC + MySQL) と plugin-updater の CronJob

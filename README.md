@@ -102,8 +102,20 @@ runtime の設定 revision ストア（weapon-tuning 画面の「確定」など
 - database: 同じ `lepinoid-runtime-db` に、プレイヤー情報とは別の database `lepinoid_config` を置く。Deployment のサイドカー `create-config-db`（`postgres:16`）が、Pod 起動のたびに存在を確認して、なければ作る（冪等）。作成後は終了せず待機するので、再起動を繰り返さない。PVC は初期化済みで `initdb.d` が再実行されないため、サイドカーにしている。テーブルは runtime が dev プロファイルの起動時に作る（`Schema`・`spawn`／`weapon` の初期 revision。冪等で、複数 Pod の同時起動でも revision は増えない）。
 - Secret: `lepinoid/spawn-config.sops.yaml`（Secret `lepinoid-spawn-config`、キー `spawnconfig.json`）。`enabled=true`・`environment=dev`・接続先 `//lepinoid-runtime-db:5432`・database `lepinoid_config`・ユーザーとパスワードを持つ。runtime コンテナに `/run/spawn-config/spawnconfig.json` として読み取り専用で mount し（`defaultMode: 0440`、uid `10001` が `fsGroup` で読む）、環境変数 `LEPINOID_SPAWN_CONFIG_PATH` で指す。runtime はこのファイルを起動時に 1 回だけ読むので、変更後は Pod の再作成が要る。
 - 資格情報は二重管理になる: ユーザーとパスワードは `lepinoid/db-credentials.sops.yaml`（`POSTGRES_USER`／`POSTGRES_PASSWORD`）と同じ値を `spawnconfig.json` にも書く。パスワードを変えるときは両方の Secret を直す。専用ロールや読み取り専用ユーザーは作らない（dev では runtime の全 Pod が同じ資格情報を持つため。本番と共有するときに導入する）。
-- 未配備のもの: `LEPINOID_SERVER_CONFIG_PATH`（`naturalSpawn` の allowlist）は設定しないので、自然湧きは無効のままで、採取の高品質率も設定されない。
+- 未配備のもの: `LEPINOID_SERVER_CONFIG_PATH`（`naturalSpawn` の許可リスト）は設定しないので、自然湧きは無効のままで、採取の高品質率も設定されない。
 - この設定を有効にするには、runtime image が Lepinoid/lepinoid#775（起動時のスキーマ作成と初期 revision 作成）を含む版であること。含まない版では、スキーマがないため weapon-tuning の確定が「基点を読み込めません」で止まる。
+
+### エージェント bridge の口 (/agent/*)
+
+dsh-agent の bridge が World UI へスナップショットを送り、入力を取りに来る口（[Lepinoid/lepinoid#840](https://github.com/Lepinoid/lepinoid/issues/840) の `POST /agent/snapshot`・`POST /agent/inbox`。契約は lepinoid の `runtime/docs/agent-bridge.md`）。dev 限定。配備は [Lepinoid/infra#93](https://github.com/Lepinoid/infra/issues/93)。
+
+- 口: runtime の MCP と**同じ 8083**（別パス `/agent/*`・別 token）。したがって NetworkPolicy は変えない。`lepinoid/network-policy.yaml` の CiliumNetworkPolicy `lepinoid-pool-runtime-mcp-deny` が、8083 への ingress を dsh-agent（`app.kubernetes.io/name: lepinoid-dev-agent`）以外から拒否するので、`/agent/*` も dsh-agent だけが届く。`/mcp` の token と `/agent/*` の token は互いに 401。
+- Secret は 1 つだけ（SOPS）: `lepinoid/agent-bridge.sops.yaml`（Secret `lepinoid-agent-bridge`、`stringData` のキー `token`）。乱数で生成した 32〜128 文字の token で、`lepinoid-dev-mcp` の token・`lepinoid-runtime-secrets` の `forwarding-secret`・`transfer-secret` と**異なる値**にする（runtime が同値を拒否する）。環境変数 `LEPINOID_AGENT_BRIDGE_TOKEN` で runtime に渡す（`optional` にしない。Secret が欠けると Pod は `CreateContainerConfigError` で上がらないので、先に置く）。暗号化は repo の `.sops.yaml` の age 鍵を使う。
+- **許可する人（許可リストの Secret は持たない）**: 許可する人の正本は `Lepinoid/OperatorInfo` の `operators.yml` で、runtime は既存の operator 認可（ロール）で判定する。許可するロールは環境変数 `LEPINOID_AGENT_ROLES=owner,developer,builder`（カンマ区切り。`lepinoid/deployment.yaml`）。`operators.yml` の `operators:` 直下のロール名（`owner`・`developer`・`builder`）と一致するロールに属する人が許可され、これらのロールに属さない人（ほかのロールの人・未登録の人）は許可されない。ロール名の追加・変更は `LEPINOID_AGENT_ROLES` の値を直す（この repo の変更）。旧方式（UUID の一覧を Secret と mount で渡し、そのファイルのパスを環境変数で指す方式）は廃止した（[Lepinoid/infra#93](https://github.com/Lepinoid/infra/issues/93) の決定）ので、再び渡さない。新しい runtime は、廃止した環境変数が設定されていると起動を拒否する。role の判定は runtime（[Lepinoid/lepinoid#848](https://github.com/Lepinoid/lepinoid/issues/848)）が実装済み。
+- **人の追加・削除**: `Lepinoid/OperatorInfo` の `operators.yml` を編集するだけで済む。この repo の変更も、runtime の再起動も要らない。runtime の operator 認可の refresh（`operators.yml` の再取得）で反映される。反映のタイミング・拒否時の挙動は lepinoid の契約文書（`runtime/docs/agent-bridge.md`）に従う。
+- **token の回転**: 新しい乱数の token で Secret `lepinoid-agent-bridge`（`lepinoid/agent-bridge.sops.yaml`）を作り直し（値を表示・記録しない。平文をディスクに残さず、パイプで `sops --encrypt` に渡す。異なる値の条件は上のとおり）、runtime の Pod を再起動する（`kubectl -n lepinoid rollout restart statefulset/lepinoid-runtime-pool`。環境変数は起動時に 1 回だけ読む）。bridge の token を dsh-agent へ注入する変更（E7）が入ったあとは、dsh-agent も再起動する（`kubectl -n lepinoid rollout restart statefulset/dsh-agent`）。
+- **pool-0 固定の制約**: bridge の宛先は `lepinoid-runtime-pool-0` 固定（MCP と同じ）。runtime の pool は 1〜3 台で各台がメモリ上の World UI・ストアを持つので、スナップショットが届くのは pool-0 だけで、他の台にいるプレイヤーには見えない。スナップショットは永続化せず、runtime の再起動で空に戻る。
+- 反映の順序: 口と `LEPINOID_AGENT_ROLES` による判定を含む runtime image（`ghcr.io/lepinoid/lepinoid:fdc0e90`、Lepinoid/lepinoid#840・#848）は、すでに main に入っている（`update-lepinoid.yml` の自動更新）。この変更は環境変数と Secret の追加だけで、image を変えない。新しい runtime は、`LEPINOID_AGENT_ROLES` だけを token なしで渡すと起動を拒否するので、token（Secret）と `LEPINOID_AGENT_ROLES` は同じコミットで一緒に反映する（この変更がそのまま満たす）。
 
 ## dsh-agent (lepinoid-dev-agent)
 

@@ -150,6 +150,14 @@ spec:
             # MCP 専用の token。forwarding-secret・transfer-secret とは別の値にする（runtime が同値を拒否する）。
             - name: LEPINOID_MCP_TOKEN
               valueFrom: {secretKeyRef: {name: lepinoid-dev-mcp, key: token}}
+            # エージェント bridge（/agent/*。MCP と同じ 8083 の別パス）専用の token（Lepinoid/lepinoid#840、Lepinoid/infra#93）。
+            # LEPINOID_MCP_TOKEN・forwarding-secret・transfer-secret とは別の値にする（runtime が同値を拒否する）。
+            # optional にしない: Secret が欠けたまま口だけ有効になる状態を作らない（LEPINOID_MCP_TOKEN と同じ）。
+            - name: LEPINOID_AGENT_BRIDGE_TOKEN
+              valueFrom: {secretKeyRef: {name: lepinoid-agent-bridge, key: token}}
+            # /agent/* の World UI の操作を許すロール（カンマ区切り）。許可する人の正本は Lepinoid/OperatorInfo の operators.yml で、
+            # runtime は既存の operator 認可（ロール）で判定する。許可リストの Secret・mount は持たない。
+            - {name: LEPINOID_AGENT_ROLES, value: "owner,developer,builder"}
             - name: POSTGRES_DB
               valueFrom: {secretKeyRef: {name: lepinoid-db-credentials, key: POSTGRES_DB}}
             - {name: LEPINOID_JDBC_URL, value: "jdbc:postgresql://lepinoid-runtime-db:5432/$(POSTGRES_DB)"}
