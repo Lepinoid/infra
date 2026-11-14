@@ -150,6 +150,12 @@ spec:
             # MCP 専用の token。forwarding-secret・transfer-secret とは別の値にする（runtime が同値を拒否する）。
             - name: LEPINOID_MCP_TOKEN
               valueFrom: {secretKeyRef: {name: lepinoid-dev-mcp, key: token}}
+            # 書き込み MCP（/mcp/draft。MCP と同じ 8083 の別パス。Lepinoid/lepinoid#842、Lepinoid/infra#94）専用の token。
+            # LEPINOID_MCP_TOKEN・LEPINOID_AGENT_BRIDGE_TOKEN・forwarding-secret・transfer-secret とは別の値にする（runtime が同値を拒否する）。
+            # optional: Secret（lepinoid/dev-mcp-draft.sops.yaml）が未作成でも Pod は上がり、そのときは書き込み MCP を立てない
+            # （/mcp/draft は 404。安全側）。runtime は起動時に 1 回だけ読むので、回転は Secret の更新と runtime の再起動。
+            - name: LEPINOID_MCP_DRAFT_TOKEN
+              valueFrom: {secretKeyRef: {name: lepinoid-dev-mcp-draft, key: token, optional: true}}
             # エージェント bridge（/agent/*。MCP と同じ 8083 の別パス）専用の token（Lepinoid/lepinoid#840、Lepinoid/infra#93）。
             # LEPINOID_MCP_TOKEN・forwarding-secret・transfer-secret とは別の値にする（runtime が同値を拒否する）。
             # optional にしない: Secret が欠けたまま口だけ有効になる状態を作らない（LEPINOID_MCP_TOKEN と同じ）。
