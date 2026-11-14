@@ -39,7 +39,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: dsh-agent
-          image: ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-274c7ef@sha256:2e37966893cb0f408c8c961f7f194949a4212c654cd0b3ee764cb7110dc923d2
+          image: ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-720467c@sha256:b809c262ea229e5d6c06571230c176b3070366c7f16a9068d31f1a2618d6d08f
           imagePullPolicy: IfNotPresent
           # ENTRYPOINT / CMD（serve）はイメージのまま。起動時にパッケージを取得しない。
           # 待ち受けは既定の 127.0.0.1:3080（DSH_HOST は設定しない）。ワイルドカードは dsh が拒否する。
@@ -65,12 +65,6 @@ spec:
             - name: LEPINOID_MCP_TOKEN
               valueFrom:
                 secretKeyRef: {name: lepinoid-dev-mcp, key: token, optional: true}
-            # dev 限定の書き込み MCP（runtime の 8083 の /mcp/draft。Lepinoid/infra#94）の Bearer token。LEPINOID_MCP_TOKEN とは別の値・別の Secret。
-            # 読み取りの行（mcp-lepinoid）にも書き込みの行（mcp-lepinoid-draft）にも、互いの token は送られない（イメージのシードの設計）。
-            # optional: 未設定なら書き込みの行は disabled になり通信しない（読み取りの行は動いたまま）。回転は Secret の更新と runtime・本 Pod の再起動。
-            - name: LEPINOID_MCP_DRAFT_TOKEN
-              valueFrom:
-                secretKeyRef: {name: lepinoid-dev-mcp-draft, key: token, optional: true}
           # loopback の 3080 への接続を試す（kubelet の httpGet は Pod IP へ向かうので使えない）。
           startupProbe:
             exec:
