@@ -136,6 +136,7 @@ DeepSeek Harness（[`dsh`](https://github.com/deepseek-ai/deepseek-harness) 0.2.
   - **Auto は Full access（sandbox なし）で動き、すべてのツール呼び出しを同じモデル（Neuralwatt の `deepseek-v4.1-flash`）が事前に審査する。審査モデルは独立していない。** したがって Auto のセッションの `bash` からは `/proc/1/environ`・`$DSH_HOME/.credentials.yaml`（cookie の署名鍵）が読める前提で運用する（段階 3 の決定 16 で受容。プロセスは分けない）。`run_code`（PTC）が直接行う Node の副作用は審査されない（残余。記録のみ）。
   - 秘密が漏れたときに備える運用: キーの上限は Neuralwatt のキーごとの allowance（`neuralwatt_key_allowance_*`・`neuralwatt_credits_remaining_usd`。後述「キーの回転・`402` が出たとき」）。`NEURALWATT_API_KEY`・`LEPINOID_MCP_TOKEN` の回転は上の各項目（Secret を更新して `rollout restart`）。「秘密の到達性（実測）」も参照。
   - 稼働中に auto-review が unload されると、dsh はそのプロセスの Auto のセッションをすべて審査なしの Full access（`never`）へ移す（防げない）。**実 Pod の dsh では unload を試さない**。復旧は、先に auto-review を読み込ませる（`rollout restart`）→ 全セッションを Web の権限選択で Auto に戻す。検知の手段と仕様は dsh-agent の README「Auto（auto-review）と自動固定」を正とする。
+  - **戻し方**: 通常は auto-review の行を残し、image だけを戻す（このイメージ更新の PR を revert する。旧 image も同じ dsh の版で、auto-review は同梱）。行を `cordis.patch.yml` から外す戻し方（バックアップの書き戻しを含む）はしない。web profile は設定の変更を HMR で取り込む構成で、外した行が稼働中に unload されると上のとおり Auto のセッションが審査なしの Full access へ移りうる。行を外す必要が出たら、そこで止めて、別の計画と許可を得る。
 - ネットワーク: 外向きは DNS、私設アドレス帯を除く公開の TCP 443、runtime の 8083 だけ。同 namespace などへの egress は base が許可しているので、`dsh-agent/network-policy.yaml` の `CiliumNetworkPolicy`（`egressDeny`）で明示的に拒否する。
 
 ### 使い方
