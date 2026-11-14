@@ -9,18 +9,18 @@ runner group は非公開リポジトリ `Lepinoid/lepinoid`（ID: 307067795）�
 | scale set / `runs-on` | CPU request・limit | メモリ request・limit | 最大同時実行 | 待機数 |
 |---|---:|---:|---:|---:|
 | `lepi-ci-small` | 2 | 4 GiB | 2 | 0 |
-| `lepi-ci-medium` | 4 | 8 GiB | 2 | 0 |
+| `lepi-ci-medium` | 4 | 8 GiB | 3 | 0 |
 
-この最大 4 ジョブの枠は両リポジトリで共有し、リポジトリごとの枠は設けない。
+この最大 5 ジョブの枠は両リポジトリで共有し、リポジトリごとの枠は設けない。
 
-4 ジョブの合計は 12 CPU / 24 GiB。別途 controller と listener 2 台の予約として
+5 ジョブの合計は 16 CPU / 32 GiB。別途 controller と listener 2 台の予約として
 200m CPU / 512 MiB が必要になる。既存ワークロードと合わせてクラスタ側の
 ResourceQuota に収まることを確認してから有効にする。
 
 runner は `toliworker-1/2/3` への node affinity と hostname による spread を持つ。
 各 Pod は `longhorn-single` の generic ephemeral PVC を 40 GiB ずつ作成する。
 workspace、Gradle cache、tool cache、`/nix`、`/tmp` はこの PVC の別ディレクトリを使い、
-Pod 削除時に回収される。4 並列で最大 160 GiB の論理容量が必要となる。
+Pod 削除時に回収される。5 並列で PVC 5 本、最大 200 GiB の論理容量が必要となる。
 データを再取得できる CI 用途なのでレプリカ数は 1 とし、ジョブ間の cache 共有はしない。
 
 ## クラスタ側の前提
@@ -29,7 +29,7 @@ Pod 削除時に回収される。4 並列で最大 160 GiB の論理容量が�
 
 - ARC 0.15.1 の CRD。controller HelmRelease は install / upgrade とも CRD を `Skip` する。
 - `lepinoid` の Helm 操作用 ServiceAccount `lepinoid-helm` と namespace 内の RBAC。
-- runner 4 台と既存サービスを収容する ResourceQuota。
+- runner 5 台と既存サービスを収容する ResourceQuota。
 - 既存の `longhorn-single` StorageClass と Cilium。
 
 このディレクトリには namespace、CRD、ClusterRole、PV を作成するリソースを含めない。
@@ -68,7 +68,7 @@ controller / listener は Kubernetes API、DNS、GitHub 等の公開 IPv4 に接
 3. controller の Ready と runner group、Secret、通信分離を確認する。
 4. 両 runner HelmRelease は有効、`minRunners: 0` なのでジョブがなければ runner は起動しない。
 5. small と medium でチェックを行い、同一 revision・cache 条件で CPU / worker 数を比較する。
-   続いて small 2 台 + medium 2 台を同時実行し、OOM / eviction / DiskPressure がなく、
+   続いて small 2 台 + medium 3 台を同時実行し、OOM / eviction / DiskPressure がなく、
    既存サービスの応答とノードのメモリ余力を保てることを確認する。
 6. 新規ジョブの受け付けを止めるときは、
    両 scale set の `minRunners` / `maxRunners` を 0 にして反映し、未完了ジョブと runner Pod / PVC の回収を確認する。

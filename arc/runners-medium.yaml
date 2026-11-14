@@ -26,7 +26,7 @@ spec:
     runnerGroup: lepinoid-ci
     runnerScaleSetName: lepi-ci-medium
     minRunners: 0
-    maxRunners: 2
+    maxRunners: 3
     controllerServiceAccount:
       name: lepinoid-arc-controller
       namespace: lepinoid
