@@ -28,6 +28,7 @@ resources:
   - lepinoid/runtime-secrets.sops.yaml
   - lepinoid/spawn-config.sops.yaml
   - lepinoid/dev-mcp.sops.yaml
+  - lepinoid/dev-mcp-draft.sops.yaml
   - lepinoid/agent-bridge.sops.yaml
   - lepinoid/db-pvc.yaml
   - lepinoid/db-deployment.yaml
