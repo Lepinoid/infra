@@ -39,7 +39,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: dsh-agent
-          image: ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-274c7ef@sha256:2e37966893cb0f408c8c961f7f194949a4212c654cd0b3ee764cb7110dc923d2
+          image: ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-c17ee6a@sha256:44babf57e290f422e435dc2c7befd6ede86fa46930bddaeac490ef60882e0048
           imagePullPolicy: IfNotPresent
           # ENTRYPOINT / CMD（serve）はイメージのまま。起動時にパッケージを取得しない。
           # 待ち受けは既定の 127.0.0.1:3080（DSH_HOST は設定しない）。ワイルドカードは dsh が拒否する。
