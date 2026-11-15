@@ -39,7 +39,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: dsh-agent
-          image: ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-274c7ef@sha256:2e37966893cb0f408c8c961f7f194949a4212c654cd0b3ee764cb7110dc923d2
+          image: ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-c17ee6a@sha256:44babf57e290f422e435dc2c7befd6ede86fa46930bddaeac490ef60882e0048
           imagePullPolicy: IfNotPresent
           # ENTRYPOINT / CMD（serve）はイメージのまま。起動時にパッケージを取得しない。
           # 待ち受けは既定の 127.0.0.1:3080（DSH_HOST は設定しない）。ワイルドカードは dsh が拒否する。
@@ -71,6 +71,14 @@ spec:
             - name: LEPINOID_MCP_DRAFT_TOKEN
               valueFrom:
                 secretKeyRef: {name: lepinoid-dev-mcp-draft, key: token, optional: true}
+            # Discord の bot token（dsh-discord。Lepinoid/infra#92）。Secret dsh-agent-discord は discord.sops.yaml（値の SOPS 暗号化は
+            # ユーザー本人。turtton/infra の hermes-lepi と同じアプリなら同じ値）。未作成でも Pod が起動するよう optional にする。
+            # token がない、または dsh-discord の設定が enabled: false の間は、Discord へ接続しない。
+            # 設定カードの Connect で token を入力しない（.credentials.yaml の保存値が環境変数より優先され、回転が効かなくなる）。
+            # 環境変数は起動時のスナップショットなので、Secret を変えたら kubectl -n lepinoid rollout restart statefulset/dsh-agent が要る。
+            - name: DSH_DISCORD_BOT_TOKEN
+              valueFrom:
+                secretKeyRef: {name: dsh-agent-discord, key: DSH_DISCORD_BOT_TOKEN, optional: true}
           # loopback の 3080 への接続を試す（kubelet の httpGet は Pod IP へ向かうので使えない）。
           startupProbe:
             exec:
