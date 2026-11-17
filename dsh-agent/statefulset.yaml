@@ -103,8 +103,9 @@ spec:
             - name: DSH_DISCORD_GUILD_ID
               valueFrom:
                 secretKeyRef: {name: dsh-agent-discord, key: DSH_DISCORD_GUILD_ID, optional: true}
-            # チャンネルアクセス role の ID（memberRoleIds に入る）。Discord 側の ACL（@everyone の閲覧拒否・この role にだけ閲覧と投稿を許可）が
-            # 先（README の「Discord ACL の事前点検」）。role を作る前は未設定のままにする（= 一般開放しない）。
+            # チャンネルアクセス role の ID（memberRoleIds に入る）。Discord 側の ACL（@everyone の閲覧拒否・この role にだけ閲覧と投稿を許可）の
+            # 点検が先（README の「Discord ACL の事前点検」）。点検のあと、非 owner へまだ付与していない role の ID を先に設定し、owner の管理下で
+            # 全機能を確認する。非 owner への role の付与が最終の開放操作（README の配備手順の 8）。未設定の間は Discord は無効。
             - name: DSH_DISCORD_ACCESS_ROLE_ID
               valueFrom:
                 secretKeyRef: {name: dsh-agent-discord, key: DSH_DISCORD_ACCESS_ROLE_ID, optional: true}
@@ -112,10 +113,10 @@ spec:
             - name: DSH_DISCORD_OWNER_ID
               valueFrom:
                 secretKeyRef: {name: dsh-agent-discord, key: DSH_DISCORD_OWNER_ID, optional: true}
-            # hostOperatorUserIds の方針（秘密ではないのでここに置く）。"owner": 案 a（owner を host operator にする）。
-            # 空: fallback（host operator なし。Web からの管理）。計画の §7.2・DC-13。案 a の成立確認（W0 の AC13）が済むまでは空のまま。
-            # 変更はこの行の PR と rollout restart。
-            - {name: DSH_DISCORD_HOST_OPERATOR, value: ""}
+            # hostOperatorUserIds の方針（秘密ではないのでここに置く）。"owner": owner だけを host operator にする（dsh-agent#16 の現行の方針。
+            # 計画の §7.2・DC-13）。旧 Web 特例は戻らない: bridge は全セッションを Auto＋never に固定し、非 Auto の設定変更は owner にも拒否する。
+            # 空にすると host operator なし（Web からの管理）。変更はこの行の PR と rollout restart。
+            - {name: DSH_DISCORD_HOST_OPERATOR, value: owner}
           # loopback の 3080 への接続を試す（kubelet の httpGet は Pod IP へ向かうので使えない）。
           startupProbe:
             exec:

@@ -113,7 +113,7 @@ dsh-agent の bridge が World UI へスナップショットを送り、入力�
 - 口: runtime の MCP と**同じ 8083**（別パス `/agent/*`・別 token）。したがって NetworkPolicy は変えない。`lepinoid/network-policy.yaml` の CiliumNetworkPolicy `lepinoid-pool-runtime-mcp-deny` が、8083 への ingress を dsh-agent（`app.kubernetes.io/name: lepinoid-dev-agent`）以外から拒否するので、`/agent/*` も dsh-agent だけが届く。`/mcp` の token と `/agent/*` の token は互いに 401。
 - Secret は 1 つだけ（SOPS）: `lepinoid/agent-bridge.sops.yaml`（Secret `lepinoid-agent-bridge`、`stringData` のキー `token`）。乱数で生成した 32〜128 文字の token で、`lepinoid-dev-mcp` の token・`lepinoid-runtime-secrets` の `forwarding-secret`・`transfer-secret` と**異なる値**にする（runtime が同値を拒否する）。環境変数 `LEPINOID_AGENT_BRIDGE_TOKEN` で runtime に渡す（`optional` にしない。Secret が欠けると Pod は `CreateContainerConfigError` で上がらないので、先に置く）。暗号化は repo の `.sops.yaml` の age 鍵を使う。
 - **許可する人（許可リストの Secret は持たない）**: 許可する人の正本は `Lepinoid/OperatorInfo` の `operators.yml` で、runtime は既存の operator 認可（ロール）で判定する。許可するロールは環境変数 `LEPINOID_AGENT_ROLES=owner,developer,builder`（カンマ区切り。`lepinoid/deployment.yaml`）。`operators.yml` の `operators:` 直下のロール名（`owner`・`developer`・`builder`）と一致するロールに属する人が許可され、これらのロールに属さない人（ほかのロールの人・未登録の人）は許可されない。ロール名の追加・変更は `LEPINOID_AGENT_ROLES` の値を直す（この repo の変更）。旧方式（UUID の一覧を Secret と mount で渡し、そのファイルのパスを環境変数で指す方式）は廃止した（[Lepinoid/infra#93](https://github.com/Lepinoid/infra/issues/93) の決定）ので、再び渡さない。新しい runtime は、廃止した環境変数が設定されていると起動を拒否する。role の判定は runtime（[Lepinoid/lepinoid#848](https://github.com/Lepinoid/lepinoid/issues/848)）が実装済み。
-- **人の追加・削除**: `Lepinoid/OperatorInfo` の `operators.yml` を編集するだけで済む。この repo の変更も、runtime の再起動も要らない。runtime の operator 認可の refresh（`operators.yml` の再取得）で反映される。反映のタイミング・拒否時の挙動は lepinoid の契約文書（`runtime/docs/agent-bridge.md`）に従う。
+- **人の追加・削除**: `Lepinoid/OperatorInfo` の `operators.yml` を編集する。この repo の変更も、runtime の再起動も要らない。**ただし、ファイルを編集しただけでは runtime がロード済みの認可情報は変わらない**（再取得は起動時処理か、明示的な refresh 要求でだけ行われる）。編集のあとに、対象の runtime（bridge の宛先の pool-0）で operator が `/lepinoid auth refresh` を実行し、`/lepinoid auth status` で refresh が完了していることを確かめる。拒否時の挙動は lepinoid の契約文書（`runtime/docs/agent-bridge.md`）に従う。
 - **token の回転**: 新しい乱数の token で Secret `lepinoid-agent-bridge`（`lepinoid/agent-bridge.sops.yaml`）を作り直し（値を表示・記録しない。平文をディスクに残さず、パイプで `sops --encrypt` に渡す。異なる値の条件は上のとおり）、runtime の Pod を再起動する（`kubectl -n lepinoid rollout restart statefulset/lepinoid-runtime-pool`。環境変数は起動時に 1 回だけ読む）。dsh-agent も同じ Secret（`lepinoid-agent-bridge` の `token`。`dsh-agent/statefulset.yaml` の `LEPINOID_AGENT_BRIDGE_TOKEN`）を読むので、**runtime を先に再起動し、そのあとに** dsh-agent も再起動する（`kubectl -n lepinoid rollout restart statefulset/dsh-agent`。dsh は MCP のツール一覧と bridge の接続を起動時に取るため、runtime のあとに再起動が要る）。
 - **pool-0 固定の制約**: bridge の宛先は `lepinoid-runtime-pool-0` 固定（MCP と同じ）。runtime の pool は 1〜3 台で各台がメモリ上の World UI・ストアを持つので、スナップショットが届くのは pool-0 だけで、他の台にいるプレイヤーには見えない。スナップショットは永続化せず、runtime の再起動で空に戻る。
 - 反映の順序: 口と `LEPINOID_AGENT_ROLES` による判定を含む runtime image（`ghcr.io/lepinoid/lepinoid:fdc0e90`、Lepinoid/lepinoid#840・#848）は、すでに main に入っている（`update-lepinoid.yml` の自動更新）。この変更は環境変数と Secret の追加だけで、image を変えない。新しい runtime は、`LEPINOID_AGENT_ROLES` だけを token なしで渡すと起動を拒否するので、token（Secret）と `LEPINOID_AGENT_ROLES` は同じコミットで一緒に反映する（この変更がそのまま満たす）。
@@ -233,9 +233,9 @@ head -c 1 -- /proc/1/environ >/dev/null 2>&1 && names < /proc/1/environ
   | `DSH_DISCORD_GUILD_ID` | Secret `dsh-agent-discord` の同名キー | `optional: true`。未設定なら Discord 設定は `enabled: false` |
   | `DSH_DISCORD_ACCESS_ROLE_ID` | 同上 | `optional: true`。チャンネルアクセス role の ID（`memberRoleIds`） |
   | `DSH_DISCORD_OWNER_ID` | 同上 | `optional: true`。owner の Discord user ID（`administratorUserIds`） |
-  | `DSH_DISCORD_HOST_OPERATOR` | 固定値（現在は空） | `owner` で案 a（owner を `hostOperatorUserIds` に入れる）、空で fallback。案 a の成立確認（AC13）が済むまで空 |
+  | `DSH_DISCORD_HOST_OPERATOR` | 固定値 `owner` | owner だけを `hostOperatorUserIds` に入れる（`/model select` などの owner の管理操作を Discord からも使えるようにする）。**これは旧 Web 特例を戻さない**: dsh-agent の bridge は全セッションを Auto＋never に固定し、非 Auto の設定変更は owner にも拒否する（dsh-agent `plugins/auto-pin`）。空にすると host operator なし（Web から管理）になる |
 
-  Guild・role・owner の ID は平文でこの repo に置かない（dsh-agent の README・AGENTS.md の規則と同じ）。Secret `dsh-agent-discord`（`dsh-agent/discord.sops.yaml`）にキーを足す。3 つがそろわない間は、テンプレート（dsh-agent の `docker/discord-settings.template.yml`）が `enabled: false` になり、Discord へ接続しない（開放しない側に倒れる）。
+  Guild・role・owner の ID は平文でこの repo に置かない（dsh-agent の README・AGENTS.md の規則と同じ）。Secret `dsh-agent-discord`（`dsh-agent/discord.sops.yaml`）にキーを足す。3 つがそろわない間は、テンプレート（dsh-agent の `docker/discord-settings.template.yml`）が `enabled: false` になり、Discord へ接続しない（開放しない側に倒れる）。**role ID を先に設定しても、その role を非 owner へ付与するまでは非 owner は使えない**（bot の利用チャンネルで `@everyone` の閲覧を拒否していることが前提。下の「Discord ACL の事前点検」）。非 owner への role の付与が、Discord の最終の開放操作になる。
 - NetworkPolicy は足りている（変更なし）: dsh-agent の egress は `dsh-agent/network-policy.yaml` が runtime（`lepinoid-runtime-pool`）の TCP 8083 を許し、runtime の ingress は `lepinoid/network-policy.yaml` の `lepinoid-pool-runtime`（許可）と CiliumNetworkPolicy `lepinoid-pool-runtime-mcp-deny`（dsh-agent 以外を拒否）、dsh-agent の `dsh-agent-egress-deny` は 8083 を deny の例外にしている。`/agent/*` は MCP と同じ 8083 なので、同じ経路で届く。ingress・中継 Pod・外部からの口は足さない（DC-03）。
 - **image の差し替え箇所**（どちらもまだ公開されていない）:
   - dsh-agent: `dsh-agent/statefulset.yaml` の `image:`（直前に `TODO(world-bridge-v2)` のコメント）。公開後に `ghcr.io/lepinoid/dsh-agent:<dsh の版>-<SHA7>@sha256:<digest>` へ書き換え、**コメントを消す**。`ci/check-manifests.sh` は tag だけの参照を拒否し、プレースホルダ digest（0 を 64 個）を `kustomization.yaml` から参照されるファイルで拒否するので、公開前の雛形の値は入れない。現在の値は bridge v2 を含まない旧 image。
@@ -249,7 +249,7 @@ head -c 1 -- /proc/1/environ >/dev/null 2>&1 && names < /proc/1/environ
 |---|---|---|
 | `DSH_DISCORD_GUILD_ID`（対象 Guild の ID） | Secret `dsh-agent-discord`（`dsh-agent/discord.sops.yaml`）の `stringData` に追加 | 配備前（既存の値の流用で足りる） |
 | `DSH_DISCORD_OWNER_ID`（owner の Discord user ID） | 同上 | 同上 |
-| `DSH_DISCORD_ACCESS_ROLE_ID`（Discord で作る、チャンネルアクセス role の ID） | 同上 | role を作り、下の「Discord ACL の事前点検」を終え、全機能の health 確認を終えた**あと**（開放の操作） |
+| `DSH_DISCORD_ACCESS_ROLE_ID`（Discord で作る、チャンネルアクセス role の ID） | 同上 | role を作り、**まだ非 owner に付与しない状態で**、下の「Discord ACL の事前点検」を終えたあと（owner の管理下で Discord を含む全機能を確認するために、**開放の前**に入れる）。非 owner への role の付与は、全機能の確認のあとの別の操作 |
 
 1. **ID を取る**: Discord のユーザー設定で開発者モードを有効にし、Guild（サーバーのアイコン）・owner（自分）・role（サーバー設定のロール一覧）を右クリックして「ID をコピー」。Guild ID と owner の ID は、PVC 上の現在の設定（`/data/dsh/profiles/web/cordis.patch.yml` の `id: dsh-discord` の行の `allowedGuildIds`・`administratorUserIds`）にすでに入っている値と同じ。流用するときは、自分の端末の画面だけで見て写す（`kubectl -n lepinoid exec dsh-agent-0 -- sed -n '/id: dsh-discord/,/^- /p' /data/dsh/profiles/web/cordis.patch.yml`。出力を共有・記録しない）。
 2. **Secret に足す**: リポジトリの worktree で `sops dsh-agent/discord.sops.yaml`（エディタで復号 → 保存時に再暗号化）。`stringData` に、既存の `DSH_DISCORD_BOT_TOKEN` は触らずにキーを足す。**値は必ず引用符で囲んだ文字列**にする（数字だけだと YAML が整数として読み、Secret の `stringData` として不正になる・桁が丸まる）:
@@ -259,35 +259,35 @@ head -c 1 -- /proc/1/environ >/dev/null 2>&1 && names < /proc/1/environ
        DSH_DISCORD_BOT_TOKEN: ENC[...]   # 既存。そのまま
        DSH_DISCORD_GUILD_ID: "<Guild の ID>"
        DSH_DISCORD_OWNER_ID: "<owner の Discord user ID>"
-       DSH_DISCORD_ACCESS_ROLE_ID: "<role の ID>"   # 開放の時期まで足さない
+       DSH_DISCORD_ACCESS_ROLE_ID: "<role の ID>"   # ACL の事前点検のあとに足す（非 owner にはまだ付与しない role）
    ```
 
-   保存後に `sops --decrypt` で値を画面に出さず、`grep -c ENC\[ dsh-agent/discord.sops.yaml` などで暗号化済みであることだけ確かめ、`ci/check-manifests.sh` を通して PR にする（最初の 2 つと、開放の時期の 1 つで PR を分けてよい）。
-3. **PVC の設定の行へテンプレートを反映する（image の更新後に 1 回）**: dsh-agent の `docker/discord-settings.template.yml` は、環境変数から設定を組む `!!js` の式。`cordis.patch.yml` の**既存の `id: dsh-discord` の行の `config` を書き換える**（行を足さない。同じ id の行が 2 つあると、後の行が前の行の `config` を丸ごと置き換える）。先に UI からの設定の保存を止め、sha256 とバックアップを取る（手順は dsh-agent の `AGENTS.md`「既存の PVC へ auto-review の行を足す（一回限り）」と、dsh-agent の `ci/world-bridge/REPORT.md`「設定と PVC 所有権」）。`.credentials.yaml`・`.env`・sessions・storages は触らない。反映は `kubectl -n lepinoid rollout restart statefulset/dsh-agent`（環境変数・設定は起動時に 1 回だけ読む）。環境変数が 3 つそろうまでは `enabled: false` になり、現在の Discord 接続は止まる（意図した動作。開放は role ID を足してから）。
+   保存後に `sops --decrypt` で値を画面に出さず、`grep -c ENC\[ dsh-agent/discord.sops.yaml` などで暗号化済みであることだけ確かめ、`ci/check-manifests.sh` を通して PR にする（Guild・owner の 2 つと role ID の 1 つで PR を分けてよい。role ID は ACL の事前点検のあと）。
+3. **PVC の設定の行へテンプレートを反映する（image の更新後に 1 回）**: dsh-agent の `docker/discord-settings.template.yml` は、環境変数から設定を組む `!!js` の式。`cordis.patch.yml` の**既存の `id: dsh-discord` の行の `config` を書き換える**（行を足さない。同じ id の行が 2 つあると、後の行が前の行の `config` を丸ごと置き換える）。先に UI からの設定の保存を止め、sha256 とバックアップを取る（手順は dsh-agent の `AGENTS.md`「既存の PVC へ auto-review の行を足す（一回限り）」と、dsh-agent の `ci/world-bridge/REPORT.md`「設定と PVC 所有権」）。`.credentials.yaml`・`.env`・sessions・storages は触らない。反映は `kubectl -n lepinoid rollout restart statefulset/dsh-agent`（環境変数・設定は起動時に 1 回だけ読む）。環境変数が 3 つそろうまでは `enabled: false` になり、現在の Discord 接続は止まる（意図した動作）。3 つがそろうと有効になるが、role を持つのは owner の管理下のアカウントだけなので、非 owner は使えない。
 4. **Secret を変えたとき**は、環境変数が起動時のスナップショットなので、そのつど `kubectl -n lepinoid rollout restart statefulset/dsh-agent`。
 
 #### Discord ACL の事前点検（配備・開放の前。計画 §7.2・§7.3、DC-13）
 
-開放（`DSH_DISCORD_ACCESS_ROLE_ID` の投入）の前に、owner が次を点検する。1 つでも満たさなければ開放しない。
+role ID を Secret に入れて Discord を有効にする**前**に、owner が次を点検する（有効にした時点から bot が利用チャンネルを聞く。`@everyone` が開いていれば、role の付与の前でも開放になる）。1 つでも満たさなければ有効にしない。
 
 - Guild の owner・Administrator・Manage Guild・Manage Channels・Manage Roles を持つのは owner だけ（取得漏れのない member 一覧で。role の付与・削除の直後も確認）。`administratorUserIds` は owner のみ、`administratorRoleIds` は空。
 - bot の利用チャンネル（と親 category）で `@everyone` の閲覧を拒否し、アクセス role にだけ閲覧・投稿を許可する。同じ role を `memberRoleIds`（= `DSH_DISCORD_ACCESS_ROLE_ID`）に使う。個別ユーザーの許可や別 role による迂回、既存・archived の public thread、thread の参加者の漏れがない。
 - チャンネルの個別 override だけで閲覧・投稿を許可しても、bot 側では認可されない（利用者にはアクセス role の付与が必要）。
-- 新しい利用者はアクセス role の付与だけで使え、role を外すと使えなくなる（実 Discord で試す）。
+- 新しい利用者はアクセス role の付与だけで使え、role を外すと使えなくなる（実 Discord で試す。非 owner のテストアカウントへの付与は、owner の管理下の確認が済んでからの開放の操作）。
 - dsh-agent の `node ci/discord-preflight.mjs <repo 外の mode600 の JSON>` で offline 監査する（出力は判定コードだけ。ID は出ない）。**成功は実 ACL の正しさの証明ではない**ので、上の点検は手動でも行う。
 
 #### 配備手順
 
-前提: lepinoid#873・dsh-agent#16 の CI・独立レビューが済み、両方がマージされ、runtime と dsh-agent の image が公開されている。計画の配備ゲート（§12。特に Web owner の識別・DC-16・既存 PVC の更新と rollback の確認）が閉じている。閉じていなければ配備しない。
+前提: lepinoid#873・dsh-agent#16 の CI・独立レビューが済み、両方がマージされ、runtime と dsh-agent の image が公開されている。dsh-agent の配備ゲート（dsh-agent の `ci/world-bridge/REPORT.md`・AC13）が閉じている。すなわち、**全セッションを Auto＋never に固定し、非 Auto の設定変更を（owner にも）拒否すること**が、公開される image で検証されている。あわせて、既存 PVC への更新と rollback の確認が済んでいる。閉じていなければ配備しない。
 
-1. **この PR を最終化する**: 公開された dsh-agent の tag と digest を `dsh-agent/statefulset.yaml` に入れ、`TODO(world-bridge-v2)` のコメントを消す。`ci/check-manifests.sh` と `kustomize build .` を通し、独立レビューを受ける。`DSH_DISCORD_HOST_OPERATOR` は、案 a の成立確認の結果に合わせる（案 a なら `owner`。決まるまで空）。
+1. **この PR を最終化する**: 公開された dsh-agent の tag と digest を `dsh-agent/statefulset.yaml` に入れ、`TODO(world-bridge-v2)` のコメントを消す。`ci/check-manifests.sh` と `kustomize build .` を通し、独立レビューを受ける。`DSH_DISCORD_HOST_OPERATOR` は `owner`（dsh-agent#16 の現行の方針）。
 2. **バックアップ（owner の管理下）**: PVC `data-dsh-agent-0`（Longhorn のスナップショット・バックアップ）。`/data/dsh/profiles/web/cordis.patch.yml`・`cordis.yml` の sha256 とバックアップ。`sessions/`・`.credentials.yaml`・Discord の束縛（`dsh_discord.json`）は削除・上書きしない。
-3. **Discord の Secret（Guild・owner）を先に反映する**: 上の手順 2 の最初の 2 キー（role ID はまだ足さない）。
+3. **Discord の ACL を点検し、role を作る**: 上の「Discord ACL の事前点検」。access role は作るが、**まだ非 owner に付与しない**。そのうえで Secret に Guild・owner・role の 3 キーを足す PR（上の手順 2）を、runtime の更新（手順 4）より前にマージしてよい（この PR の StatefulSet の変更が入るまで、Pod は再起動しないので反映されない）。
 4. **runtime を先に更新する**: lepinoid の公開後に出る runtime の更新（`update-lepinoid.yml` の PR）をマージする。`kubectl -n lepinoid rollout status statefulset/lepinoid-runtime-pool` と `kubectl -n lepinoid get pod lepinoid-runtime-pool-0 -o jsonpath='{.spec.containers[*].image}'` で、pool-0 が新しい image で Ready であることを確かめる（pool-0 だけが bridge を受ける。接続中のプレイヤーは再接続が要る）。
 5. **そのあとに dsh-agent を更新する**: この PR をマージする（Flux が image と環境変数の変更で StatefulSet を作り直す）。マージ後に runtime をさらに再起動したときや、Secret だけを変えたときは、`kubectl -n lepinoid rollout restart statefulset/dsh-agent`（runtime のあとに dsh-agent）。
-6. **PVC の設定の行へテンプレートを反映する**（上の手順 3）。Discord は `enabled: false` のまま（role ID が未設定）。
-7. **確認（次節）**。全機能の health を確認する。
-8. **Discord の開放**: ACL の事前点検を終え、role ID を Secret に足す（別の小さな PR）→ `rollout restart statefulset/dsh-agent` → 実機確認（計画 §11「オーナーの実機確認手順」の 7）。
+6. **PVC の設定の行へテンプレートを反映する**（上の手順 3）。3 つの ID がそろっているので Discord は有効になるが、role を持つ非 owner はまだいない（owner の管理下だけで使える）。
+7. **確認（次節）**。owner の管理下で、Discord を含む全機能の health を確認する（計画 §11「オーナーの実機確認手順」の 1〜6・8）。
+8. **Discord の開放（最終操作）**: 確認が済んだら、まず非 owner のテストアカウントへ access role を付与し、計画 §11 の 7（非 owner の Discord 利用。`/model select`・`/permission set`・`/guild forget`・`/project bind` の拒否と、owner の正規設定操作の成功）を確認する。問題がなければ利用者へ role を付与する（Discord 側の操作。この repo の変更も再起動も要らない）。
 
 #### 確認手順
 
@@ -304,7 +304,7 @@ kubectl -n lepinoid exec dsh-agent-0 -- node -e 'fetch(process.env.LEPINOID_AGEN
 kubectl -n lepinoid logs dsh-agent-0 | grep -iE 'bridge|did not activate|composition failed|cannot activate'
 ```
 
-- World: owner が `/lepinoid agent` を開き、計画 §11「オーナーの実機確認手順」の 1〜6・8 を行う。`LEPINOID_AGENT_ROLES` に属さない人にパネルが見えないこと。
+- World: owner が `/lepinoid agent` を開き、計画 §11「オーナーの実機確認手順」の 1〜6・8 を行う（6 の Discord との往復も、非 owner への role の付与の前に owner のアカウントで行う）。`LEPINOID_AGENT_ROLES` に属さない人にパネルが見えないこと。
 - token は MCP の 2 つと別の値であること（runtime が同値を拒否するので、runtime が Ready なら満たされる）。
 - 再起動（`rollout restart statefulset/dsh-agent`）のあとも、履歴・Discord の束縛・認証情報が残ること。
 
@@ -313,7 +313,13 @@ kubectl -n lepinoid logs dsh-agent-0 | grep -iE 'bridge|did not activate|composi
 **先に非 owner の操作を閉じる**（旧 auto-pin の image へ戻したまま、新しい利用者開放だけを残さない。DC-15）。
 
 1. **Discord の開放を閉じる**: Discord 側でアクセス role を非 owner から外す（再起動不要で即時）。続いて Secret から `DSH_DISCORD_ACCESS_ROLE_ID` のキーを消す PR（またはバックアップした元の設定の行へ書き戻す）→ `rollout restart statefulset/dsh-agent`。キーがなければテンプレートは `enabled: false` になる。
-2. **World の操作を閉じる**: `Lepinoid/OperatorInfo` の `operators.yml` から非 owner のロールを外す（runtime の再起動は要らない）。急ぐときは `LEPINOID_AGENT_ROLES` を `owner` だけにする PR（runtime の再起動が要る）。保留中の操作・質問は失効表示になる。実行中の作業は停止できたかを確認し、unknown を成功扱いしない。
+2. **World の操作を閉じる**。次の確認が**すべて**そろうまで、手順 3（image の戻し）に進まない。
+   - `Lepinoid/OperatorInfo` の `operators.yml` から非 owner のロールを外す。**編集しただけでは反映されない**ので、対象の runtime（bridge の宛先の pool-0。複数台が稼働中なら、同じ認可情報を揃えるため各台）で operator が `/lepinoid auth refresh` を実行する。
+   - 確認 (a): `/lepinoid auth status` で refresh が完了している（実行中・失敗でない）。
+   - 確認 (b): 非 owner のテストアカウントが `/lepinoid agent` を開けない（パネルが見えない・拒否される）。
+   - 確認 (c): 保留中の操作・質問が失効表示になっている。
+   - 急ぐときは、代わりに `LEPINOID_AGENT_ROLES` を `owner` だけにする PR を使ってよい。その場合は、マージ後に `kubectl -n lepinoid rollout status statefulset/lepinoid-runtime-pool` で再起動の完了を確認し、上の (b)・(c) を確認してから進む（runtime の再起動で World のスナップショットと保留中の操作は空に戻る）。
+   - 実行中の作業は停止できたかを確認し、unknown を成功扱いしない。
 3. **image を戻す**: この PR を revert（dsh-agent の image と環境変数）する。**dsh-agent を先、runtime をあと**に戻す（旧 dsh-agent と新 runtime の組では、パネルが失効表示になるだけで壊れない。逆は bridge が `409 downgrade` になりうる）。runtime は `update-lepinoid.yml` の更新を戻す PR で直前の image へ。
 4. 削除しないもの: PVC・`sessions/`・`.credentials.yaml`・Discord の束縛と storage・Secret（`dsh-agent-discord`・`lepinoid-agent-bridge`）。追加したキーは残してよい（旧 image は読まない）。bridge の台帳（`$DSH_HOME/world-bridge/`）は独立した場所で、旧版が読めなくても既存データを壊さない。
 5. 旧 image が前提とする設定の行（`cordis.patch.yml` の `id: dsh-discord`）が、テンプレートに書き換わったままのときは、バックアップの元の設定へ 1 行だけ書き戻す（行を足さない・sha256 を照合する）。
