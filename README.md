@@ -295,8 +295,10 @@ lepinoid・dsh-agent の各 PR の CI と独立レビューが済み、両方が
 
 1. **owner が既存 PVC をバックアップ**し、上の「複数 role への移行」の手順 2 と同じく UI 設定保存を止める。
 2. **runtime を先に更新**する。runtime image の更新後、`kubectl -n lepinoid rollout status statefulset/lepinoid-runtime-pool` を待ち、`lepinoid-runtime-pool-0` が Ready であることを確認する。pool-0 が bridge の接続先。
-3. **dsh-agent を後から更新**する。新 image と optional env を反映し、`kubectl -n lepinoid rollout status statefulset/dsh-agent` を待つ。旧 Secret のまま PVC と Discord の段階移行を行う。
-4. runtime → dsh-agent の順で新 Chat UI を確認する。World で session list/title、会話履歴、質問、送信、scroll、選択中 session の維持を owner が計画の受け入れ条件に沿って確認する。Discord は owner のみで先に確認し、非 owner への role 付与は最終の開放操作にする。開放後は非 owner の `/model select`・`/permission set`・`/guild forget`・`/project bind` が拒否され、owner の正規設定操作が成功することも確かめる。
+3. **配備ゲート 1（新 runtime ＋ 旧 bridge）**: dsh-agent はまだ更新せず、World UI で閲覧・発言・停止・操作結果の配送を確認する。いずれかが失敗または確認できない場合はここで停止し、dsh-agent を更新しない。原因を解決してゲートを再確認する。
+4. **dsh-agent を後から更新**する。新 image と optional env を反映し、`kubectl -n lepinoid rollout status statefulset/dsh-agent` を待つ。旧 Secret のまま PVC と Discord の段階移行を行う。
+5. **配備ゲート 2（新 bridge）**: runtime の `POST /agent/inbox` が返す HTTP 200 の v2 応答で `Lepinoid-Agent-Capabilities: history-current-cursor` を dsh-agent が検出し、応答本文と同じ `runtimeEpoch` の間 `currentCursor` を有効化して、会話履歴のある session の後続 snapshot に `history.currentCursor` を含めることを確認する。header・epoch・cursor を確認できない、または値が一致しない場合は配備完了にせず停止する。非 owner へ開放せず、rollback が必要なら dsh-agent を先に戻し、新 runtime ＋旧 bridge の配送を確認してから、必要に応じ runtime を戻す。
+6. runtime → dsh-agent の順で新 Chat UI を確認する。World で session list/title、会話履歴、質問、送信、過去履歴をスクロール中の新着に対する表示位置の維持、選択中 session の維持を owner が計画の受け入れ条件に沿って確認する。Discord は owner のみで先に確認し、非 owner への role 付与は最終の開放操作にする。開放後は非 owner の `/model select`・`/permission set`・`/guild forget`・`/project bind` が拒否され、owner の正規設定操作が成功することも確かめる。
 
 image・Ready、env の有無（値は出さない）、bridge への到達を確認する例:
 
@@ -307,7 +309,7 @@ kubectl -n lepinoid exec dsh-agent-0 -- node -e 'fetch(process.env.LEPINOID_AGEN
 kubectl -n lepinoid logs dsh-agent-0 | grep -iE 'bridge|did not activate|composition failed|cannot activate'
 ```
 
-認証なしの bridge 要求は 4xx（通常 401）で拒否されるのが正常。タイムアウト・接続エラーは到達性を確認する。World は owner が `/lepinoid agent` を開き、計画 §11 の実機確認を行う。dsh-agent の再起動後も履歴・Discord binding・認証情報が残ることを確認する。
+認証なしの bridge 要求は 4xx（通常 401）で拒否されるのが正常。タイムアウト・接続エラーは到達性を確認する。World は owner が `/lepinoid agent` を開き、計画 §12.3 の実機確認を行う。dsh-agent の再起動後も履歴・Discord binding・認証情報が残ることを確認する。
 
 #### rollback（データを消さない）
 
