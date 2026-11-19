@@ -39,8 +39,8 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: dsh-agent
-          # TODO(dsh-chat-ui): dsh-agent#17 を merge・公開後、公開済み tag@digest へ差し替える。
-          image: ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-33542df@sha256:1fd25f5e7c92175b7f1ea6878b4c9acc4d6ca2d86c9c12e4aed5030b069296fc
+          # dsh-agent#17（bridge v2・Chat UI）を含む公開済みイメージ。README「Chat UI の配備順と確認」のゲート 1（新 runtime＋旧 bridge）を確認してからだけ merge する。
+          image: ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-4fea2d1@sha256:cc0c467489ebfc5956a9920c64d3b39177ef16ebfc59958f2243a2af8db93616
           imagePullPolicy: IfNotPresent
           # ENTRYPOINT / CMD（serve）はイメージのまま。起動時にパッケージを取得しない。
           # 待ち受けは既定の 127.0.0.1:3080（DSH_HOST は設定しない）。ワイルドカードは dsh が拒否する。

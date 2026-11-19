@@ -238,7 +238,7 @@ head -c 1 -- /proc/1/environ >/dev/null 2>&1 && names < /proc/1/environ
 
   Guild・role・owner の ID は平文でこの repo に置かない（dsh-agent の README・AGENTS.md の規則と同じ）。Secret `dsh-agent-discord`（`dsh-agent/discord.sops.yaml`）にキーを足す。Guild・owner と、新旧どちらか一方の role env がそろわない間は、テンプレート（dsh-agent の `docker/discord-settings.template.yml`）が `enabled: false` になり、Discord へ接続しない。**role ID を先に設定しても、その role を非 owner へ付与するまでは非 owner は使えない**（bot の利用チャンネルで `@everyone` の閲覧を拒否していることが前提。下の「Discord ACL の点検と新しい preflight」）。非 owner への role の付与が、Discord の最終の開放操作になる。
 - NetworkPolicy は足りている（変更なし）: dsh-agent の egress は `dsh-agent/network-policy.yaml` が runtime（`lepinoid-runtime-pool`）の TCP 8083 を許し、runtime の ingress は `lepinoid/network-policy.yaml` の `lepinoid-pool-runtime`（許可）と CiliumNetworkPolicy `lepinoid-pool-runtime-mcp-deny`（dsh-agent 以外を拒否）、dsh-agent の `dsh-agent-egress-deny` は 8083 を deny の例外にしている。`/agent/*` は MCP と同じ 8083 なので、同じ経路で届く。ingress・中継 Pod・外部からの口は足さない（DC-03）。
-- **image の差し替えは TODO**: dsh-agent PR #17 と runtime の変更をそれぞれ merge・公開したあと、実在する tag と digest を確認して参照を更新する。`dsh-agent/statefulset.yaml` は現行の有効な参照を保ち、公開前の仮 digest を入れない（CI は tag だけの参照とゼロ digest を拒否）。この PR の差分では image を先行更新しない。
+- **image の差し替え**: dsh-agent#17 は merge・公開済み（`ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-4fea2d1@sha256:cc0c467489ebfc5956a9920c64d3b39177ef16ebfc59958f2243a2af8db93616`）。runtime は `update-lepinoid.yml` の更新で配備済み。dsh-agent の image の参照は、下の「Chat UI の配備順と確認」のゲート 1（新 runtime＋旧 bridge）を owner が確認したあとだけ merge する PR で更新する（merge が配備になる）。公開前の仮 digest を入れない（CI は tag だけの参照とゼロ digest を拒否）。
   - runtime: `lepinoid/deployment.yaml`・`lepinoid/velocity.yaml` の `ghcr.io/lepinoid/lepinoid:<SHA7>`（と `lepinoid/runtime-version.yaml`・world bundle の組）。手で書き換えず、lepinoid の main で公開されたあとに `update-lepinoid.yml` が出す更新に任せる（上の「Dev server」）。runtime の追加の環境変数・Secret は不要（`LEPINOID_AGENT_BRIDGE_TOKEN`・`LEPINOID_AGENT_ROLES` は配備済み）。
 
 #### owner が入力する値と Secret の更新
@@ -291,7 +291,7 @@ node ci/discord-preflight.mjs /private/path/guild-audit.json
 
 #### Chat UI の配備順と確認（CU-16）
 
-lepinoid・dsh-agent の各 PR の CI と独立レビューが済み、両方が merge され、対応 image が公開されてから配備する。**image 参照は TODO**: この PR では image を更新しない。merge・公開後に runtime は `update-lepinoid.yml` の更新、dsh-agent は `dsh-agent/statefulset.yaml` の `image:` を実在する tag@digest に差し替える。仮の tag/digest は manifest に入れない。
+lepinoid・dsh-agent の各 PR の CI と独立レビューが済み、両方が merge され、対応 image が公開されてから配備する。**image の参照**: runtime は `update-lepinoid.yml` の更新で先に配備する。dsh-agent の `dsh-agent/statefulset.yaml` の `image:` は、公開済みの tag@digest へ差し替える PR を、ゲート 1 の確認後（手順 4）にだけ merge する。仮の tag/digest は manifest に入れない。
 
 1. **owner が既存 PVC をバックアップ**し、上の「複数 role への移行」の手順 2 と同じく UI 設定保存を止める。
 2. **runtime を先に更新**する。runtime image の更新後、`kubectl -n lepinoid rollout status statefulset/lepinoid-runtime-pool` を待ち、`lepinoid-runtime-pool-0` が Ready であることを確認する。pool-0 が bridge の接続先。
