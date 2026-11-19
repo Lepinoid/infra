@@ -39,6 +39,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: dsh-agent
+          # TODO(dsh-chat-ui): dsh-agent#17 を merge・公開後、公開済み tag@digest へ差し替える。
           image: ghcr.io/lepinoid/dsh-agent:0.2.2-rc.1-33542df@sha256:1fd25f5e7c92175b7f1ea6878b4c9acc4d6ca2d86c9c12e4aed5030b069296fc
           imagePullPolicy: IfNotPresent
           # ENTRYPOINT / CMD（serve）はイメージのまま。起動時にパッケージを取得しない。
@@ -91,21 +92,22 @@ spec:
             - name: LEPINOID_AGENT_BRIDGE_TOKEN
               valueFrom:
                 secretKeyRef: {name: lepinoid-agent-bridge, key: token}
-            # Discord の開放設定。dsh-agent の docker/discord-settings.template.yml が、下の 4 つの環境変数から dsh-discord の設定を組む
+            # Discord の開放設定。dsh-agent の docker/discord-settings.template.yml が、Secret の bot token・Guild・owner・role から設定を組む
             # （テンプレートは PVC の cordis.patch.yml の既存の dsh-discord の行へ、ユーザー本人が手動でマージする）。
             # ID（Guild・チャンネルアクセス role・owner の Discord user ID）はこの repo に平文で置かない: Secret dsh-agent-discord
             # （dsh-agent/discord.sops.yaml）の追加キーとして、ユーザー本人が `sops` で足す。
-            # optional: キーが未設定の間は環境変数が付かず、テンプレートは enabled=false（3 つがそろうまで接続しない）になる
-            # （空文字・一部だけの設定でも同じ）。環境変数は起動時のスナップショットなので、変更後は rollout restart が要る。
+            # すべて optional。env が未設定・不正なら Discord だけ無効になる。環境変数は起動時のスナップショットなので、変更後は rollout restart が要る。
             - name: DSH_DISCORD_GUILD_ID
               valueFrom:
                 secretKeyRef: {name: dsh-agent-discord, key: DSH_DISCORD_GUILD_ID, optional: true}
-            # チャンネルアクセス role の ID（memberRoleIds に入る）。Discord 側の ACL（@everyone の閲覧拒否・この role にだけ閲覧と投稿を許可）の
-            # 点検が先（README の「Discord ACL の事前点検」）。点検のあと、非 owner へまだ付与していない role の ID を先に設定し、owner の管理下で
-            # 全機能を確認する。非 owner への role の付与が最終の開放操作（README の配備手順の 8）。未設定の間は Discord は無効。
+            # 旧単数形式の role ID。新形式への移行期間だけ optional 参照を残す。新旧 env が両方設定されると Discord だけ無効。
             - name: DSH_DISCORD_ACCESS_ROLE_ID
               valueFrom:
                 secretKeyRef: {name: dsh-agent-discord, key: DSH_DISCORD_ACCESS_ROLE_ID, optional: true}
+            # 新形式の role ID 配列（JSON 文字列配列）。owner が ACL と PVC の式を整えたあと Secret に設定する。
+            - name: DSH_DISCORD_ACCESS_ROLE_IDS
+              valueFrom:
+                secretKeyRef: {name: dsh-agent-discord, key: DSH_DISCORD_ACCESS_ROLE_IDS, optional: true}
             # owner の Discord user ID（administratorUserIds に入る。下が owner のときは hostOperatorUserIds にも）。
             - name: DSH_DISCORD_OWNER_ID
               valueFrom:
