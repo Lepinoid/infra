@@ -29,7 +29,7 @@ spec:
   template:
     metadata:
       annotations:
-        lepinoid.dev/world-bundle-digest: "sha256:927afe44a3836359d90838eb214cb1f6bcdccc496461feb16cb7d856ee32d455"
+        lepinoid.dev/world-bundle-digest: "sha256:5840c107dec836713ec52abe5970b79ce6e660ac445b4eaf6a77723f3c7051ca"
       labels:
         app.kubernetes.io/name: lepinoid-runtime-pool
         lepinoid.net/pool: dev
@@ -80,7 +80,7 @@ spec:
             - {name: ghcr-pull-secret, mountPath: /var/run/ghcr, readOnly: true}
             - {name: world-sync-work, mountPath: /work}
         - name: select-presence-credentials
-          image: ghcr.io/lepinoid/lepinoid:de31b3b
+          image: ghcr.io/lepinoid/lepinoid:fbf9fb8
           imagePullPolicy: IfNotPresent
           command: [/bin/sh, /run/pool/select-credentials.sh]
           securityContext:
@@ -99,7 +99,7 @@ spec:
             - {name: selected-presence-credentials, mountPath: /run/presence}
       containers:
         - name: runtime
-          image: ghcr.io/lepinoid/lepinoid:de31b3b
+          image: ghcr.io/lepinoid/lepinoid:fbf9fb8
           imagePullPolicy: IfNotPresent
           command: [/bin/sh, /run/pool/runtime-entrypoint.sh]
           securityContext:
@@ -188,7 +188,7 @@ spec:
             - {name: LEPINOID_WORLD_EDITS_PATH, value: /data/world-edits}
             - {name: LEPINOID_RESOURCE_PACK_HTTP_HOST, value: "0.0.0.0"}
             - {name: LEPINOID_RESOURCE_PACK_HTTP_PORT, value: "8082"}
-            - {name: LEPINOID_RESOURCE_PACK_URL, value: "https://pack-dev.lepinoid.net/resourcepack.zip?runtime=de31b3b"}
+            - {name: LEPINOID_RESOURCE_PACK_URL, value: "https://pack-dev.lepinoid.net/resourcepack.zip?runtime=fbf9fb8"}
           startupProbe:
             httpGet: {path: /readyz, port: management}
             periodSeconds: 5
