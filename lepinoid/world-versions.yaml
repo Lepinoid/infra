@@ -3,8 +3,8 @@ kind: ConfigMap
 metadata:
   name: lepinoid-runtime-worlds
 data:
-  digest: "sha256:6ab52d72c05d934a392b95ef8d47075d5bafa39da5b6ffb5bb7e519c8dbbb833"
+  digest: "sha256:af00132e6c74c2fa2e22d8975e207615210d266f174ae5170c77b9d264b6a814"
   version: "2026.11.21-1740d"
   gitCommitSha: "1740d6a427e21d62229f13d5b3ec6b1a025111bd"
-  pool-fingerprint: "61b7f8e38242aa44bc3ce32deb821e926506193aebc2b9c9d197d4a30b0077ec"
-  importerSha: "56de34bf0e49a93027a4c8305a3a80685a381c9a"
+  pool-fingerprint: "1c2b6e4f30a10186af31b300a38e1e6f65b61b67ce27692f41f5c2a314d3ea9e"
+  importerSha: "20e46c88c72e0e056afddedb38e65b942dba2928"
