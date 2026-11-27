@@ -17,7 +17,7 @@ spec:
   template:
     metadata:
       annotations:
-        lepinoid.dev/world-bundle-digest: "sha256:a1a18e35a2081800338d497c4bc0d60101e0557b275ce977818a2e2edaefccfb"
+        lepinoid.dev/world-bundle-digest: "sha256:04df9ccf640d245c85fb3dde28c73765e3bc7c9f8162f38bbdc428ad09877d26"
       labels:
         app.kubernetes.io/name: lepinoid-pool-velocity
         lepinoid.net/pool: dev
